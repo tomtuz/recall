@@ -1,13 +1,12 @@
 # Recall
 
-**Recall** – internetinė aplikacija mokymosi procesui palengvinti, pritaikant
-pasikartojančiais intervalais rodomas klausimų ir atsakymų korteles
-(spaced repetition).
+**Recall** — a web application that simplifies studying with flashcards shown
+at repeating intervals (spaced repetition).
 
-> **Projekto užduotis (task description):** žr. [GitHub Wiki](https://github.com/tomtuz/recall/wiki)
-> – pilna sistemos paskirtis ir funkciniai reikalavimai.
+> **Project task description:** see the [GitHub Wiki](https://github.com/tomtuz/recall/wiki)
+> for the full system purpose and functional requirements.
 
-## Architektūra
+## Architecture
 
 ```text
 ┌─────────────────────┐         ┌──────────────────────────┐
@@ -20,25 +19,25 @@ pasikartojančiais intervalais rodomas klausimų ir atsakymų korteles
                               └────────────────────────────┘
 ```
 
-- **Recall.Api** – ASP.NET Core (.NET 10) REST API: Course → Topic → Card
-  hierarchija, JWT autentifikacija su besikeičiančiais refresh tokenais,
-  trys rolės, SM-2 pagrindo kartojimo planuoklis, OpenAPI (Swagger).
-- **Recall.Web** – React 19 + Vite + TypeScript SPA (planuojama L3 etape).
-- **PostgreSQL** – duomenų bazė per Entity Framework Core.
+- **Recall.Api** — ASP.NET Core (.NET 10) REST API: Course → Topic → Card
+  hierarchy, JWT authentication with rotating refresh tokens, three roles,
+  an SM-2-based review scheduler, OpenAPI (Swagger).
+- **Recall.Web** — React 19 + Vite + TypeScript SPA (planned for the L3 stage).
+- **PostgreSQL** — database via Entity Framework Core.
 
-API specifikacija: [`api-spec.json`](api-spec.json) / [`api-spec.yaml`](api-spec.yaml)
-(OpenAPI 3.0 su pavyzdžiais), demonstracija per Swagger UI arba
-[`postman/`](postman) kolekciją.
+API specification: [`api-spec.json`](api-spec.json) / [`api-spec.yaml`](api-spec.yaml)
+(OpenAPI 3.0 with examples); explore it via Swagger UI or the
+[`postman/`](postman) collection.
 
-## Paleidimas
+## Getting started
 
-### Reikalavimai
+### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- Docker (vietai PostgreSQL duomenų bazės)
-- Python 3 (smoke testui, neprivaloma)
+- Docker (for the local PostgreSQL database)
+- Python 3 (optional, for the smoke test)
 
-### 1. PostgreSQL duomenų bazė (Docker)
+### 1. PostgreSQL database (Docker)
 
 ```powershell
 docker run -d --name recall-pg `
@@ -46,92 +45,93 @@ docker run -d --name recall-pg `
   -p 15432:5432 postgres:16-alpine
 ```
 
-Jei konteineris jau sukurtas, tiesiog paleiskite jį iš naujo:
+If the container already exists, just start it again:
 
 ```powershell
 docker start recall-pg
 ```
 
-### 2. API konfigūracija
+### 2. API configuration
 
-Sistema naudoja naudotojo paslaptis (user secrets) JWT pasirašymo raktui ir
-duomenų bazės jungčiai. Nustatykite jas vieną kartą:
+The app uses user secrets for the JWT signing key and the database connection
+string. Set them once:
 
 ```powershell
 cd Recall.Api
 dotnet user-secrets init
-dotnet user-secrets set "Jwt:Secret" "<sugeneruokite-atsitiktinį-raktą>"
+dotnet user-secrets set "Jwt:Secret" "<generate-a-random-key>"
 dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=15432;Database=recall;Username=recall;Password=recall"
 ```
 
-Vietinė Docker PostgreSQL jungtis (aukščiau) yra numatyta demonstracijai –
-keiskite, jei naudojate kitą adresą. Produkcinėje aplinkoje abi reikšmes
-pateikite per aplinkos kintamuosius (`ConnectionStrings__Default`,
+The local Docker PostgreSQL connection (above) is the demonstration default —
+change it if you use a different PostgreSQL address. In production, provide
+both values via environment variables (`ConnectionStrings__Default`,
 `Jwt__Secret`).
 
-### 3. Paleiskite API
+### 3. Run the API
 
 ```powershell
 dotnet run --project Recall.Api --urls http://localhost:15080
 ```
 
-API pasiekiamas:
+The API is available at:
 
-- REST endpoint'ai: `http://localhost:15080/api/v1/...`
+- REST endpoints: `http://localhost:15080/api/v1/...`
 - Swagger UI: <http://localhost:15080/swagger>
 
-Pirmasis paleidimas automatiškai sukuria duomenų bazės struktūrą (migrations)
-ir, Development aplinkoje, užpildo demonstraciniais duomenimis.
+The first start automatically applies database migrations and, in the
+Development environment, seeds demonstration data.
 
-### 4. Testai
+### 4. Tests
 
 ```powershell
 dotnet test Recall.slnx
 ```
 
-### 5. Smoke testas (neprivaloma)
+### 5. Smoke test (optional)
 
-Su veikiančiu API:
+With the API running:
 
 ```powershell
 python labs/lab1/smoke_test.py
 ```
 
-### 6. API specifikacijos regeneravimas
+### 6. Regenerate the API specification
 
 ```powershell
 pwsh -File scripts/sync-api-docs.ps1
 ```
 
-## Demo naudotojai (Development)
+## Demo users (Development)
 
-| El. paštas | Slaptažodis | Rolė |
+| Email | Password | Role |
 |---|---|---|
-| `admin@recall.local` | `Admin123!` | Administratorius |
+| `admin@recall.local` | `Admin123!` | Administrator |
 | `author@recall.local` | `Author123!` | Contributor |
 | `learner@recall.local` | `Learner123!` | Contributor |
 
-Šie duomenys sukuriami tik Development aplinkoje ir skirti tik demonstracijai.
+These accounts are created only in the Development environment and exist for
+demonstration purposes only.
 
-## Būsena
+## Status
 
-- **Lab 1 (REST API)** – įgyvendinta ir testuota.
-- **React SPA (L3)** – planuojama.
-- **Debesų talpinimas (L2)** – planuojama: „Azure for Students" („Azure
-  Container App" + „Azure Database for PostgreSQL Flexible Server").
+- **Lab 1 (REST API)** — implemented and tested.
+- **React SPA (L3)** — planned.
+- **Cloud deployment (L2)** — planned: Azure for Students (Azure Container
+  App + Azure Database for PostgreSQL Flexible Server).
 
-## Struktūra
+## Repository structure
 
 ```text
 Recall.Api/          REST API (.NET 10, EF Core, JWT, Swagger)
-Recall.Api.Tests/    xUnit testai (SM-2 planuoklis, OpenAPI pavyzdžiai)
-api-spec.json/yaml   OpenAPI 3.0 specifikacija su pavyzdžiais
-postman/             Postman kolekcija (endpoint demonstracija)
-labs/lab1/           Lab 1 aprašymas ir smoke testas
-docs/                Architektūros dokumentacija
+Recall.Api.Tests/    xUnit tests (SM-2 scheduler, OpenAPI examples)
+api-spec.json/yaml   OpenAPI 3.0 specification with examples
+postman/             Postman collection (endpoint demonstration)
+labs/lab1/           Lab 1 description and smoke test
+docs/                Architecture documentation
 ```
 
-## Projekto užduotis
+## Project task
 
-Pilna projekto užduotis (sistemos paskirtis, funkciniai reikalavimai,
-naudotojų rolės) – [GitHub Wiki](https://github.com/tomtuz/recall/wiki).
+The full project task (system purpose, functional requirements, user roles)
+is available on the [GitHub Wiki](https://github.com/tomtuz/recall/wiki).
