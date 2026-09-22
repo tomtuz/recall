@@ -31,13 +31,24 @@ API specification: [`api-spec.json`](api-spec.json) / [`api-spec.yaml`](api-spec
 
 ## Getting started
 
-### Prerequisites
+**Quick start (recommended):** run the init script once — it generates the
+JWT signing key, sets user secrets, starts PostgreSQL and seeds demo data —
+then use the run script every time after:
+
+```powershell
+pwsh -File scripts/init.ps1   # one-time setup (safe to re-run)
+pwsh -File scripts/run.ps1    # start the API -> http://localhost:15080/swagger
+```
+
+### Manual setup (what the scripts do)
+
+#### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - Docker (for the local PostgreSQL database)
 - Python 3 (optional, for the smoke test)
 
-### 1. PostgreSQL database (Docker)
+#### 1. PostgreSQL database (Docker)
 
 ```powershell
 docker run -d --name recall-pg `
@@ -51,7 +62,7 @@ If the container already exists, just start it again:
 docker start recall-pg
 ```
 
-### 2. API configuration
+#### 2. API configuration
 
 The app uses user secrets for the JWT signing key and the database connection
 string. Set them once:
@@ -68,7 +79,7 @@ change it if you use a different PostgreSQL address. In production, provide
 both values via environment variables (`ConnectionStrings__Default`,
 `Jwt__Secret`).
 
-### 3. Run the API
+#### 3. Run the API
 
 ```powershell
 dotnet run --project Recall.Api --urls http://localhost:15080
@@ -127,6 +138,7 @@ Recall.Api/          REST API (.NET 10, EF Core, JWT, Swagger)
 Recall.Api.Tests/    xUnit tests (SM-2 scheduler, OpenAPI examples)
 api-spec.json/yaml   OpenAPI 3.0 specification with examples
 postman/             Postman collection (endpoint demonstration)
+scripts/             init.ps1 (setup) + run.ps1 (launch) + sync-api-docs.ps1
 labs/lab1/           Lab 1 description and smoke test
 docs/                Architecture documentation
 ```

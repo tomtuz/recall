@@ -108,6 +108,12 @@ foreach ($file in $staged) {
         if ($context -match $localhostEvidence -and $pm.Value -match '(?i)recall') {
             continue  # documented local Docker demo default
         }
+        # POSTGRES_* env demo credential (docker run lines in scripts) - same
+        # documented local default; never a production secret.
+        $pwValue = $pm.Value -replace '^[^=]+=', ''
+        if ($pwValue -match '(?i)^recall$' -and ($line -match 'POSTGRES_(USER|PASSWORD)' -or $context -match $localhostEvidence)) {
+            continue
+        }
         $failures += "INLINE PASSWORD in: $file ('$($pm.Value.Substring(0, [Math]::Min(20, $pm.Value.Length)))...')"
     }
 
