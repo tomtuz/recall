@@ -1,0 +1,31 @@
+# Build output
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+*.user
+*.suo
+.vs/
+.vscode/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+
+# Secrets & environment: never commit real credentials or the dev signing key.
+.env
+.env.*
+!.env.example
+**/appsettings.Development.json
+*.db
+*.sqlite
+*.sqlite-*
+
+# Local agent instructions (workflow only; never published).
+AGENTS.md
+**/AGENTS.md
+
+# Project documentation stays tracked despite machine-wide ignore rules.
+!docs/
+!docs/**

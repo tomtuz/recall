@@ -1,0 +1,3 @@
+#!/bin/sh
+# Shim: delegate to the pwsh implementation next to this file.
+exec pwsh -NoProfile -ExecutionPolicy Bypass -File "$(dirname "$0")/pre-commit.ps1" "$@"
