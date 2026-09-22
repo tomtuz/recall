@@ -1,0 +1,751 @@
+{
+  "info": {
+    "name": "Recall API — Lab 1",
+    "description": "Covers all Recall API endpoints: auth, CRUD+LIST for Course/Topic/Card, hierarchical endpoint, composite reads, review feature, bulk import, and the negative cases required by the rubric (401/403/404/409/400). Login requests store tokens automatically; run the folder order top-to-bottom for the 15-second demonstration.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:15080" },
+    { "key": "apiPrefix", "value": "{{baseUrl}}/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "authorToken", "value": "" },
+    { "key": "learnerToken", "value": "" },
+    { "key": "courseId", "value": "1" },
+    { "key": "topicId", "value": "1" },
+    { "key": "cardId", "value": "1" },
+    { "key": "newCourseId", "value": "" },
+    { "key": "newTopicId", "value": "" },
+    { "key": "newCardId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login as admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/auth/login", "host": ["{{apiPrefix}}"], "path": ["auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@recall.local\",\n  \"password\": \"Admin123!\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"200 on admin login\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"adminToken\", body.accessToken);",
+                  "pm.collectionVariables.set(\"refreshToken\", body.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as author",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/auth/login", "host": ["{{apiPrefix}}"], "path": ["auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"author@recall.local\",\n  \"password\": \"Author123!\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"200 on author login\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"authorToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as learner",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/auth/login", "host": ["{{apiPrefix}}"], "path": ["auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"learner@recall.local\",\n  \"password\": \"Learner123!\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"200 on learner login\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"learnerToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register (409 duplicate)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/auth/register", "host": ["{{apiPrefix}}"], "path": ["auth", "register"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"author@recall.local\",\n  \"password\": \"SomePass123!\",\n  \"displayName\": \"Duplicate\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"409 on duplicate email\", () => pm.response.to.have.status(409));"] }
+            }
+          ]
+        },
+        {
+          "name": "Register new user (201)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/auth/register", "host": ["{{apiPrefix}}"], "path": ["auth", "register"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"demo-{{$timestamp}}@recall.local\",\n  \"password\": \"Demo12345!\",\n  \"displayName\": \"Demo User\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"201 on register\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"accessToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh (rotation)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/auth/refresh", "host": ["{{apiPrefix}}"], "path": ["auth", "refresh"] },
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"200 on refresh\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"accessToken\", body.accessToken);",
+                  "pm.collectionVariables.set(\"oldRefreshToken\", pm.collectionVariables.get(\"refreshToken\"));",
+                  "pm.collectionVariables.set(\"refreshToken\", body.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh reuse (rotated token -> 401, family revoked)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/auth/refresh", "host": ["{{apiPrefix}}"], "path": ["auth", "refresh"] },
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{oldRefreshToken}}\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"401 when reusing the rotated token\", () => pm.response.to.have.status(401));"] }
+            }
+          ]
+        },
+        {
+          "name": "Refresh successor also revoked (family)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/auth/refresh", "host": ["{{apiPrefix}}"], "path": ["auth", "refresh"] },
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"401 successor after family revocation\", () => pm.response.to.have.status(401));"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Courses",
+      "item": [
+        {
+          "name": "List (pagination + search)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/courses?page=1&pageSize=3&search=web", "host": ["{{apiPrefix}}"], "path": ["courses"], "query": [{ "key": "page", "value": "1" }, { "key": "pageSize", "value": "3" }, { "key": "search", "value": "web" }] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"200 list\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"meta present\", () => pm.expect(pm.response.json().meta).to.have.property(\"totalItems\"));",
+                  "pm.test(\"_links present\", () => pm.expect(pm.response.json().links).to.be.an(\"object\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/courses", "host": ["{{apiPrefix}}"], "path": ["courses"] },
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"DEMO-1\",\n  \"title\": \"Postman Demo Course\",\n  \"description\": \"Created by the Postman collection run.\",\n  \"visibility\": \"Private\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"201 created\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"newCourseId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read one (200)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/courses/{{newCourseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{newCourseId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 read one\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Update (PATCH 200)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/courses/{{newCourseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{newCourseId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Postman Demo Course (renamed)\",\n  \"visibility\": \"Public\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 on patch\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "404 missing course",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/courses/99999", "host": ["{{apiPrefix}}"], "path": ["courses", "99999"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"404 on missing\", () => pm.response.to.have.status(404));"] }
+            }
+          ]
+        },
+        {
+          "name": "409 delete course with topics",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{authorToken}}" }],
+            "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"409 conflict when children exist\", () => pm.response.to.have.status(409));"] }
+            }
+          ]
+        },
+        {
+          "name": "403 edit someone else's course",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{learnerToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Hijacked\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"403 on foreign resource\", () => pm.response.to.have.status(403));"] }
+            }
+          ]
+        },
+        {
+          "name": "Admin can edit any course (200)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"description\": \"REST, API design and web application architecture. (updated by admin)\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 admin override\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Topics",
+      "item": [
+        {
+          "name": "List by course",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}/topics", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}", "topics"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 topics list\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Create (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/courses/{{newCourseId}}/topics", "host": ["{{apiPrefix}}"], "path": ["courses", "{{newCourseId}}", "topics"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Demo topic\",\n  \"summary\": \"Created by Postman.\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"201 topic created\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"newTopicId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read one (200)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 read topic\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Update (PATCH 200)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"summary\": \"Updated by Postman.\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 topic patch\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "409 delete topic with cards",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{authorToken}}" }],
+            "url": { "raw": "{{apiPrefix}}/topics/{{topicId}}", "host": ["{{apiPrefix}}"], "path": ["topics", "{{topicId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"409 topic has cards\", () => pm.response.to.have.status(409));"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cards",
+      "item": [
+        {
+          "name": "List by topic (filters)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/topics/{{topicId}}/cards?state=Review&due=true", "host": ["{{apiPrefix}}"], "path": ["topics", "{{topicId}}", "cards"], "query": [{ "key": "state", "value": "Review" }, { "key": "due", "value": "true" }] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 cards list\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Create (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}/cards", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}", "cards"] },
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"What does the abbreviation HTTP stand for?\",\n  \"answer\": \"HyperText Transfer Protocol\",\n  \"hint\": \"Think documents.\",\n  \"difficulty\": 1,\n  \"tags\": \"demo,http\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"201 card created\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"newCardId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read one (200)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/cards/{{newCardId}}", "host": ["{{apiPrefix}}"], "path": ["cards", "{{newCardId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 read card\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Update (PATCH 200)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/cards/{{newCardId}}", "host": ["{{apiPrefix}}"], "path": ["cards", "{{newCardId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"difficulty\": 2,\n  \"tags\": \"demo,http,updated\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 card patch\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "400 invalid payload (difficulty=9)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}/cards", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}", "cards"] },
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"Valid question?\",\n  \"answer\": \"Valid answer\",\n  \"difficulty\": 9\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"400 on invalid difficulty\", () => pm.response.to.have.status(400));"] }
+            }
+          ]
+        },
+        {
+          "name": "Delete (204)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{apiPrefix}}/cards/{{newCardId}}", "host": ["{{apiPrefix}}"], "path": ["cards", "{{newCardId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"204 on delete\", () => pm.response.to.have.status(204));"] }
+            }
+          ]
+        },
+        {
+          "name": "404 deleted card",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/cards/{{newCardId}}", "host": ["{{apiPrefix}}"], "path": ["cards", "{{newCardId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"404 after delete\", () => pm.response.to.have.status(404));"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Extras",
+      "item": [
+        {
+          "name": "Hierarchical: all 3 objects",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}/topics/{{topicId}}/cards", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}", "topics", "{{topicId}}", "cards"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 hierarchical\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Course overview (composite)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}/overview", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}", "overview"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"200 overview\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"stateBreakdown present\", () => pm.expect(pm.response.json()).to.have.property(\"stateBreakdown\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dashboard (composite)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{authorToken}}" }],
+            "url": { "raw": "{{apiPrefix}}/me/dashboard", "host": ["{{apiPrefix}}"], "path": ["me", "dashboard"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"200 dashboard\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"dueToday present\", () => pm.expect(pm.response.json()).to.have.property(\"dueToday\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Review queue",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{authorToken}}" }],
+            "url": { "raw": "{{apiPrefix}}/review/queue?limit=5", "host": ["{{apiPrefix}}"], "path": ["review", "queue"], "query": [{ "key": "limit", "value": "5" }] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 queue\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Review rating (SM-2-lite)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{authorToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/cards/{{cardId}}/review", "host": ["{{apiPrefix}}"], "path": ["cards", "{{cardId}}", "review"] },
+            "body": { "mode": "raw", "raw": "{\n  \"rating\": \"good\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"200 review\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"nextDueAt returned\", () => pm.expect(pm.response.json()).to.have.property(\"nextDueAt\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 invalid rating",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{authorToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/cards/{{cardId}}/review", "host": ["{{apiPrefix}}"], "path": ["cards", "{{cardId}}", "review"] },
+            "body": { "mode": "raw", "raw": "{\n  \"rating\": \"superb\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"400 invalid rating\", () => pm.response.to.have.status(400));"] }
+            }
+          ]
+        },
+        {
+          "name": "Bulk import (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}/cards/import", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}", "cards", "import"] },
+            "body": { "mode": "raw", "raw": "{\n  \"cards\": [\n    { \"question\": \"Q1\", \"answer\": \"A1\" },\n    { \"question\": \"Q2\", \"answer\": \"A2\" },\n    { \"question\": \"Q3\", \"answer\": \"A3\" }\n  ]\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"201 import\", () => pm.response.to.have.status(201));"] }
+            }
+          ]
+        },
+        {
+          "name": "Import with invalid row (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}/cards/import", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}", "cards", "import"] },
+            "body": { "mode": "raw", "raw": "{\n  \"cards\": [\n    { \"question\": \"\", \"answer\": \"empty question\" }\n  ]\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"400 row error\", () => pm.response.to.have.status(400));"] }
+            }
+          ]
+        },
+        {
+          "name": "401 without token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiPrefix}}/courses", "host": ["{{apiPrefix}}"], "path": ["courses"] },
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"NOPE\",\n  \"title\": \"Nope\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"401 unauthenticated\", () => pm.response.to.have.status(401));"] }
+            }
+          ]
+        },
+        {
+          "name": "Cleanup: list imported cards",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}/cards?pageSize=100", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}", "cards"], "query": [{ "key": "pageSize", "value": "100" }] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"200 card list for cleanup\", () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Cleanup: delete topic (204 after emptying)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "// Delete every card in the topic first, then delete the topic itself.",
+                "const res = await pm.sendRequest({ url: pm.variables.replaceIn(\"{{apiPrefix}}/topics/{{newTopicId}}/cards?pageSize=100\"), method: \"GET\", header: { Authorization: `Bearer ${pm.collectionVariables.get(\"accessToken\")}` } });",
+                "const cards = res.json().data || [];",
+                "for (const c of cards) {",
+                "  await pm.sendRequest({ url: pm.variables.replaceIn(`{{apiPrefix}}/cards/${c.id}`), method: \"DELETE\", header: { Authorization: `Bearer ${pm.collectionVariables.get(\"accessToken\")}` } });",
+                "}"
+              ] }
+            }
+          ]
+        },
+        {
+          "name": "Cleanup: delete course (204 after emptying)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{apiPrefix}}/courses/{{newCourseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{newCourseId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"204 course deleted\", () => pm.response.to.have.status(204));"] }
+            }
+          ]
+        },
+        {
+          "name": "Logout (204)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{apiPrefix}}/auth/logout", "host": ["{{apiPrefix}}"], "path": ["auth", "logout"] },
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"204 logout\", () => pm.response.to.have.status(204));"] }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
