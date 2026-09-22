@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Recall.Api.Tests/Recall.Api.Tests.csproj" />
+  <Project Path="Recall.Api/Recall.Api.csproj" />
+</Solution>
