@@ -28,9 +28,36 @@ if (-not $secretsPresent) {
     Write-Host "[init] User secrets already present - keeping existing values." -ForegroundColor DarkGray
 }
 
-# 2. PostgreSQL via Docker.
-$dockerOk = $false
-if (Get-Command docker -ErrorAction SilentlyContinue) {
+# 2. PostgreSQL: use the server the connection string points at if it is already
+#    reachable (any local install); otherwise start the Docker demo container.
+
+# Host/port from ConnectionStrings:Default (user secrets, else environment); demo default localhost:15432.
+function Get-DbTarget {
+  $cs = dotnet user-secrets list 2>$null | ForEach-Object { if ($_ -match '^ConnectionStrings:Default\s*=\s*(.+)$') { $Matches[1] } } | Select-Object -First 1
+  if (-not $cs) { $cs = $env:ConnectionStrings__Default }
+  $target = [pscustomobject]@{ Host = 'localhost'; Port = 15432 }
+  if ($cs) {
+    if ($cs -match '(?i)(?:^|;)\s*(?:Host|Server)\s*=\s*([^;]+)') { $target.Host = $Matches[1].Trim() }
+    $target.Port = if ($cs -match '(?i)(?:^|;)\s*Port\s*=\s*(\d+)') { [int]$Matches[1] } else { 5432 }
+  }
+  $target
+}
+
+# TCP probe with a short timeout (works in Windows PowerShell 5.1 and pwsh 7).
+function Test-DbReachable([string]$DbHost, [int]$Port) {
+  $client = New-Object System.Net.Sockets.TcpClient
+  try { return $client.ConnectAsync($DbHost, $Port).Wait(1500) -and $client.Connected }
+  catch { return $false }
+  finally { $client.Dispose() }
+}
+
+$db = Get-DbTarget
+$dbAddr = "$($db.Host):$($db.Port)"
+$dbReady = Test-DbReachable $db.Host $db.Port
+if ($dbReady) {
+  Write-Host "[init] PostgreSQL is reachable at $dbAddr - using it (Docker not needed)." -ForegroundColor Green
+}
+elseif (Get-Command docker -ErrorAction SilentlyContinue) {
     docker info *> $null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[init] Docker engine not running - starting Docker Desktop..." -ForegroundColor Yellow
@@ -60,14 +87,24 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
         }
         if (-not $dbReady) { throw "PostgreSQL did not accept connections within 30s." }
     } else {
-        Write-Warning "Docker is installed but the engine did not start; the API can still run if you provide a PostgreSQL at localhost:15432."
+        Write-Warning "Docker is installed but its engine did not start, and nothing answers at $dbAddr."
+        Write-Host "       Start Docker Desktop and re-run this script, or start your own PostgreSQL at $dbAddr." -ForegroundColor Yellow
     }
 } else {
-    Write-Warning "Docker CLI not found. Install Docker Desktop, or point ConnectionStrings:Default at an existing PostgreSQL."
+    Write-Warning "No PostgreSQL answers at $dbAddr, and Docker is not installed to start the demo container."
+    Write-Host "       Either start a PostgreSQL server at $dbAddr (user/password/database as in" -ForegroundColor Yellow
+    Write-Host "       ConnectionStrings:Default; demo default recall/recall/recall), or install Docker" -ForegroundColor Yellow
+    Write-Host "       Desktop and re-run this script. To use another server, change the connection string:" -ForegroundColor Yellow
+    Write-Host "       dotnet user-secrets set ""ConnectionStrings:Default"" ""Host=...;Port=...;...""" -ForegroundColor Yellow
 }
 
 Write-Host ""
-Write-Host "Setup complete. Start the API with:" -ForegroundColor Cyan
+if ($dbReady) {
+    Write-Host "Setup complete. Start the API with:" -ForegroundColor Cyan
+} else {
+    Write-Host "Setup incomplete: no database at $dbAddr. The API would start, but every database" -ForegroundColor Yellow
+    Write-Host "request fails until PostgreSQL runs there (see above). Once it does, start the API with:" -ForegroundColor Yellow
+}
 Write-Host "  pwsh -File scripts/run.ps1        (from the repository root)" -ForegroundColor White
 Write-Host "or:" -ForegroundColor Cyan
 Write-Host "  dotnet run --project Recall.Api --urls http://localhost:15080" -ForegroundColor White

@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 # scripts/run.ps1 - start the Recall API (uses the setup from scripts/init.ps1).
-# Optional: -PgOnly to only ensure PostgreSQL is running, -NoBuild to skip the build.
+# Optional: -NoBuild to skip the build. Uses any PostgreSQL already reachable at the
+# connection string's host:port; falls back to the Docker container from init.ps1.
 
 param([switch]$NoBuild)
 $ErrorActionPreference = 'Stop'
@@ -17,9 +18,36 @@ if ($secretCount -lt 2 -and $secretCount -ne 2) {
     }
 }
 
-# 2. Ensure PostgreSQL is running (container created by init.ps1).
-$pgOk = $false
-if (Get-Command docker -ErrorAction SilentlyContinue) {
+# 2. Ensure PostgreSQL is reachable: an already running server (any local install)
+#    is used as is; otherwise start the Docker container created by init.ps1.
+
+# Host/port from ConnectionStrings:Default (user secrets, else environment); demo default localhost:15432.
+function Get-DbTarget {
+  $cs = dotnet user-secrets list 2>$null | ForEach-Object { if ($_ -match '^ConnectionStrings:Default\s*=\s*(.+)$') { $Matches[1] } } | Select-Object -First 1
+  if (-not $cs) { $cs = $env:ConnectionStrings__Default }
+  $target = [pscustomobject]@{ Host = 'localhost'; Port = 15432 }
+  if ($cs) {
+    if ($cs -match '(?i)(?:^|;)\s*(?:Host|Server)\s*=\s*([^;]+)') { $target.Host = $Matches[1].Trim() }
+    $target.Port = if ($cs -match '(?i)(?:^|;)\s*Port\s*=\s*(\d+)') { [int]$Matches[1] } else { 5432 }
+  }
+  $target
+}
+
+# TCP probe with a short timeout (works in Windows PowerShell 5.1 and pwsh 7).
+function Test-DbReachable([string]$DbHost, [int]$Port) {
+  $client = New-Object System.Net.Sockets.TcpClient
+  try { return $client.ConnectAsync($DbHost, $Port).Wait(1500) -and $client.Connected }
+  catch { return $false }
+  finally { $client.Dispose() }
+}
+
+$db = Get-DbTarget
+$dbAddr = "$($db.Host):$($db.Port)"
+$pgOk = Test-DbReachable $db.Host $db.Port
+if ($pgOk) {
+  Write-Host "[run] PostgreSQL is reachable at $dbAddr." -ForegroundColor Green
+}
+elseif (Get-Command docker -ErrorAction SilentlyContinue) {
     docker info *> $null
     if ($LASTEXITCODE -eq 0) {
         $status = docker inspect -f '{{.State.Status}}' recall-pg 2>$null
@@ -40,7 +68,10 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
     }
 }
 if (-not $pgOk) {
-    Write-Warning "PostgreSQL not reachable on localhost:15432 - the API will start but database operations will fail until a database is reachable."
+    $why = if (Get-Command docker -ErrorAction SilentlyContinue) { 'the Docker container did not come up' } else { 'Docker is not installed to start the demo container' }
+    Write-Warning "No PostgreSQL answers at $dbAddr ($why)."
+    Write-Host "       The API starts anyway, but every database request fails until a PostgreSQL" -ForegroundColor Yellow
+    Write-Host "       server runs at $dbAddr - start it, then restart the API. Details: scripts/init.ps1." -ForegroundColor Yellow
 }
 
 # 3. Run the API in this console (Ctrl+C to stop).
