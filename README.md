@@ -30,9 +30,6 @@ HTTPS with `Secure` refresh cookies (development certificate):
 
 ## Database
 
-**1. Database** (once): user, password and database `recall`.
-
-Docker:
 ```bash
 docker run -d --name recall-pg -p 15432:5432 -e POSTGRES_USER=recall -e POSTGRES_PASSWORD=recall -e POSTGRES_DB=recall postgres:16-alpine
 ```
