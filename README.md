@@ -102,12 +102,13 @@ Development environment, seeds demonstration data.
 dotnet test Recall.slnx
 ```
 
-### 5. Smoke test (optional)
+### 5. Smoke test and Postman run (optional)
 
 With the API running:
 
 ```powershell
 python labs/lab1/smoke_test.py
+npx --yes newman@6 run postman/Recall.postman_collection.json
 ```
 
 ### 6. Regenerate the API specification
