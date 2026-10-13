@@ -3,6 +3,9 @@
 # Requires: .NET SDK + npm (npx). api-spec.* are the declared source of truth;
 # the Postman collection is a generated artifact kept in sync with --sync.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive console script: colored status output.')]
+param()
+
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $collection = Join-Path $root "postman\Recall.postman_collection.json"

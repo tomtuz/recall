@@ -4,6 +4,7 @@
 # connection string's host:port; falls back to the Docker container from init.ps1.
 # Runs from any directory and leaves the caller's location unchanged.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive console script: colored status output.')]
 param([switch]$NoBuild)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
@@ -33,8 +34,8 @@ elseif (Get-Command docker -ErrorAction SilentlyContinue) {
             else {
                 Write-Host "[run] PostgreSQL container missing - run scripts/init.ps1 first (creating basic one now)..." -ForegroundColor Yellow
                 docker run -d --name recall-pg `
-                  -e POSTGRES_USER=recall -e POSTGRES_PASSWORD=recall -e POSTGRES_DB=recall `
-                  -p 15432:5432 postgres:16-alpine *> $null
+                    -e POSTGRES_USER=recall -e POSTGRES_PASSWORD=recall -e POSTGRES_DB=recall `
+                    -p 15432:5432 postgres:16-alpine *> $null
             }
         }
         for ($i = 0; $i -lt 30; $i++) {

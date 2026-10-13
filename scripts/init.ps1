@@ -4,6 +4,9 @@
 # applies migrations and seeds demo data on its first start. Idempotent: safe to
 # re-run. Runs from any directory and leaves the caller's location unchanged.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive console script: colored status output.')]
+param()
+
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
@@ -32,7 +35,7 @@ $db = Get-DbTarget
 $dbAddr = "$($db.Host):$($db.Port)"
 $dbReady = Test-DbReachable $db.Host $db.Port
 if ($dbReady) {
-  Write-Host "[init] PostgreSQL is reachable at $dbAddr - using it (Docker not needed)." -ForegroundColor Green
+    Write-Host "[init] PostgreSQL is reachable at $dbAddr - using it (Docker not needed)." -ForegroundColor Green
 }
 elseif (Get-Command docker -ErrorAction SilentlyContinue) {
     docker info *> $null
@@ -48,8 +51,8 @@ elseif (Get-Command docker -ErrorAction SilentlyContinue) {
         $status = docker inspect -f '{{.State.Status}}' recall-pg 2>$null
         if (-not $status) {
             docker run -d --name recall-pg `
-              -e POSTGRES_USER=recall -e POSTGRES_PASSWORD=recall -e POSTGRES_DB=recall `
-              -p 15432:5432 postgres:16-alpine *> $null
+                -e POSTGRES_USER=recall -e POSTGRES_PASSWORD=recall -e POSTGRES_DB=recall `
+                -p 15432:5432 postgres:16-alpine *> $null
             Write-Host "[init] PostgreSQL container 'recall-pg' created (port 15432)." -ForegroundColor Green
         } elseif ($status -ne 'running') {
             docker start recall-pg *> $null

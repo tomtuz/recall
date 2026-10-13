@@ -10,6 +10,9 @@
 # Real secrets (private keys, provider tokens, the dev JWT prefix, non-local
 # DB passwords, private workspace paths) always block.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive console script: colored status output.')]
+param()
+
 $ErrorActionPreference = 'Stop'
 $failures = @()
 
