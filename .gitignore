@@ -26,6 +26,9 @@ __pycache__/
 AGENTS.md
 **/AGENTS.md
 
+# IDE exclusions
+.zed
+
 # Project documentation stays tracked despite machine-wide ignore rules.
 !docs/
 !docs/**
