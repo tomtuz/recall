@@ -45,6 +45,18 @@ pwsh -File scripts/run.ps1    # start the API -> http://localhost:15080/swagger
 The scripts work from any directory (also as `.\scripts\run.ps1` in an open
 shell) and leave the current location unchanged, including after Ctrl+C.
 
+**Launcher:** `index.ps1` in the repository root opens the API in a new
+Windows Terminal tab (running `scripts/run.ps1`) and waits until it answers.
+A stale API from this checkout is restarted; any other process on port 15080
+is reported, never killed.
+
+```powershell
+.\index.ps1          # start or restart the API -> http://localhost:15080/swagger
+.\index.ps1 status   # Docker, PostgreSQL and API port
+.\index.ps1 test     # Playwright API tests (tests/api)
+.\index.ps1 stop     # stop the API
+```
+
 ### Manual setup (what the scripts do)
 
 #### Prerequisites
@@ -99,15 +111,17 @@ Development environment, seeds demonstration data.
 ### 4. Tests
 
 ```powershell
-dotnet test Recall.slnx
+dotnet test Recall.slnx   # xUnit: scheduler + OpenAPI examples
+.\index.ps1 test          # Playwright end-to-end API tests, see tests/api/README.md
 ```
 
-### 5. Smoke test and Postman run (optional)
+### 5. Smoke test, edge-case probe and Postman run (optional)
 
 With the API running:
 
 ```powershell
-python labs/lab1/smoke_test.py
+python labs/lab1/smoke_test.py      # full Lab 1 + Lab 2 flows
+python labs/lab1/defense_probe.py   # malformed/edge requests: expected 4xx, never 5xx
 npx --yes newman@6 run postman/Recall.postman_collection.json
 ```
 
@@ -142,8 +156,10 @@ Recall.Api/          REST API (.NET 10, EF Core, JWT, Swagger)
 Recall.Api.Tests/    xUnit tests (SM-2 scheduler, OpenAPI examples)
 api-spec.json/yaml   OpenAPI 3.0 specification with examples
 postman/             Postman collection (endpoint demonstration)
+index.ps1            quick launcher (start / stop / status / test)
 scripts/             init.ps1 (setup) + run.ps1 (launch) + sync-api-docs.ps1 + common.ps1 (shared helpers)
-labs/lab1/           Lab 1 smoke test (73 checks)
+tests/api/           Playwright end-to-end API tests
+labs/lab1/           Lab 1 smoke test (73 checks) + edge-case probe
 ```
 
 ## Project task

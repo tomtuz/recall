@@ -3,6 +3,22 @@
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ApiDir = Join-Path $RepoRoot 'Recall.Api'
+$ApiPort = 15080
+
+# Processes listening on a local TCP port (none when free; Windows only).
+function Get-PortOwner([int]$Port) {
+    if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) { return }
+    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique |
+        ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue }
+}
+
+# True when the process runs this checkout's Recall.Api (dotnet run or the built exe).
+function Test-OwnApiProcess($Process) {
+    $cmdline = (Get-CimInstance Win32_Process -Filter "ProcessId=$($Process.Id)" -ErrorAction SilentlyContinue).CommandLine
+    if (-not $cmdline) { return $false }
+    $cmdline.Replace('/', '\').IndexOf("$ApiDir\", [StringComparison]::OrdinalIgnoreCase) -ge 0
+}
 
 # Host/port from ConnectionStrings:Default (user secrets, else environment); demo default localhost:15432.
 function Get-DbTarget {

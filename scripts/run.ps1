@@ -53,10 +53,19 @@ if (-not $pgOk) {
     exit 1
 }
 
-# 3. Run the API in this console (Ctrl+C to stop). With --project, dotnet run uses
+# 3. The API port must be free; otherwise dotnet run fails with "address already in use".
+$owner = Get-PortOwner $ApiPort | Select-Object -First 1
+if ($owner) {
+    $what = if (Test-OwnApiProcess $owner) { 'an already running Recall API' } else { "'$($owner.ProcessName)'" }
+    Write-Host "[run] Port $ApiPort is held by $what (PID $($owner.Id))." -ForegroundColor Red
+    Write-Host "      Stop it (Stop-Process -Id $($owner.Id)) or restart with .\index.ps1, then re-run." -ForegroundColor Yellow
+    exit 1
+}
+
+# 4. Run the API in this console (Ctrl+C to stop). With --project, dotnet run uses
 #    the project's launch profile and Recall.Api as content root from any location.
-Write-Host "=== Recall API -> http://localhost:15080/swagger ===" -ForegroundColor Cyan
-$runArgs = @('run', '--project', $ApiDir, '--urls', 'http://localhost:15080')
+Write-Host "=== Recall API -> http://localhost:$ApiPort/swagger ===" -ForegroundColor Cyan
+$runArgs = @('run', '--project', $ApiDir, '--urls', "http://localhost:$ApiPort")
 if ($NoBuild) { $runArgs += '--no-build' }
 dotnet @runArgs
 Write-Host "API exited with code $LASTEXITCODE" -ForegroundColor Yellow
