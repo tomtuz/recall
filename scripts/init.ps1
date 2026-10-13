@@ -1,27 +1,25 @@
 #!/usr/bin/env pwsh
 # scripts/init.ps1 - one-time backend setup for a fresh clone.
-# Generates the JWT signing key, sets user secrets, starts PostgreSQL,
-# applies migrations and seeds demo data. Idempotent: safe to re-run.
+# Generates the JWT signing key, sets user secrets and starts PostgreSQL; the API
+# applies migrations and seeds demo data on its first start. Idempotent: safe to
+# re-run. Runs from any directory and leaves the caller's location unchanged.
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-Set-Location (Join-Path $root 'Recall.Api')
+. (Join-Path $PSScriptRoot 'common.ps1')
 
 Write-Host "=== Recall API - first-time setup ===" -ForegroundColor Cyan
 
 # 1. User secrets: JWT signing key + database connection string.
-$secretsPresent = $false
-dotnet user-secrets list 2>$null | ForEach-Object {
-    if ($_ -match '^(Jwt:Secret|ConnectionStrings:Default)') { $secretsPresent = $true }
-}
+$secretsPresent = [bool](dotnet user-secrets list --project $ApiDir 2>$null |
+    Where-Object { $_ -match '^(Jwt:Secret|ConnectionStrings:Default)' })
 if (-not $secretsPresent) {
-    dotnet user-secrets init | Out-Null
+    dotnet user-secrets init --project $ApiDir | Out-Null
     # Generate 64 random bytes -> base64 (512-bit key, matches production guidance).
     $key = New-Object byte[] 64
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($key)
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($key)  # also works in Windows PowerShell 5.1
     $jwtSecret = [Convert]::ToBase64String($key)
-    dotnet user-secrets set "Jwt:Secret" $jwtSecret | Out-Null
-    dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=15432;Database=recall;Username=recall;Password=recall" | Out-Null
+    dotnet user-secrets set "Jwt:Secret" $jwtSecret --project $ApiDir | Out-Null
+    dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=15432;Database=recall;Username=recall;Password=recall" --project $ApiDir | Out-Null
     Write-Host "[init] JWT signing key generated and stored in user secrets." -ForegroundColor Green
     Write-Host "       Database connection string set (localhost:15432 demo default)." -ForegroundColor Green
 } else {
@@ -30,27 +28,6 @@ if (-not $secretsPresent) {
 
 # 2. PostgreSQL: use the server the connection string points at if it is already
 #    reachable (any local install); otherwise start the Docker demo container.
-
-# Host/port from ConnectionStrings:Default (user secrets, else environment); demo default localhost:15432.
-function Get-DbTarget {
-  $cs = dotnet user-secrets list 2>$null | ForEach-Object { if ($_ -match '^ConnectionStrings:Default\s*=\s*(.+)$') { $Matches[1] } } | Select-Object -First 1
-  if (-not $cs) { $cs = $env:ConnectionStrings__Default }
-  $target = [pscustomobject]@{ Host = 'localhost'; Port = 15432 }
-  if ($cs) {
-    if ($cs -match '(?i)(?:^|;)\s*(?:Host|Server)\s*=\s*([^;]+)') { $target.Host = $Matches[1].Trim() }
-    $target.Port = if ($cs -match '(?i)(?:^|;)\s*Port\s*=\s*(\d+)') { [int]$Matches[1] } else { 5432 }
-  }
-  $target
-}
-
-# TCP probe with a short timeout (works in Windows PowerShell 5.1 and pwsh 7).
-function Test-DbReachable([string]$DbHost, [int]$Port) {
-  $client = New-Object System.Net.Sockets.TcpClient
-  try { return $client.ConnectAsync($DbHost, $Port).Wait(1500) -and $client.Connected }
-  catch { return $false }
-  finally { $client.Dispose() }
-}
-
 $db = Get-DbTarget
 $dbAddr = "$($db.Host):$($db.Port)"
 $dbReady = Test-DbReachable $db.Host $db.Port
@@ -95,16 +72,16 @@ elseif (Get-Command docker -ErrorAction SilentlyContinue) {
     Write-Host "       Either start a PostgreSQL server at $dbAddr (user/password/database as in" -ForegroundColor Yellow
     Write-Host "       ConnectionStrings:Default; demo default recall/recall/recall), or install Docker" -ForegroundColor Yellow
     Write-Host "       Desktop and re-run this script. To use another server, change the connection string:" -ForegroundColor Yellow
-    Write-Host "       dotnet user-secrets set ""ConnectionStrings:Default"" ""Host=...;Port=...;...""" -ForegroundColor Yellow
+    Write-Host "       dotnet user-secrets set ""ConnectionStrings:Default"" ""Host=...;Port=...;..."" --project Recall.Api" -ForegroundColor Yellow
 }
 
 Write-Host ""
 if ($dbReady) {
     Write-Host "Setup complete. Start the API with:" -ForegroundColor Cyan
 } else {
-    Write-Host "Setup incomplete: no database at $dbAddr. The API would start, but every database" -ForegroundColor Yellow
-    Write-Host "request fails until PostgreSQL runs there (see above). Once it does, start the API with:" -ForegroundColor Yellow
+    Write-Host "Setup incomplete: no database at $dbAddr. The API applies migrations at startup," -ForegroundColor Yellow
+    Write-Host "so it cannot start until PostgreSQL runs there (see above). Once it does, start it with:" -ForegroundColor Yellow
 }
-Write-Host "  pwsh -File scripts/run.ps1        (from the repository root)" -ForegroundColor White
+Write-Host "  pwsh -File scripts/run.ps1" -ForegroundColor White
 Write-Host "or:" -ForegroundColor Cyan
 Write-Host "  dotnet run --project Recall.Api --urls http://localhost:15080" -ForegroundColor White

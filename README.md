@@ -32,20 +32,25 @@ API specification: [`api-spec.json`](api-spec.json) / [`api-spec.yaml`](api-spec
 ## Getting started
 
 **Quick start (recommended):** run the init script once — it generates the
-JWT signing key, sets user secrets, starts PostgreSQL and seeds demo data —
-then use the run script every time after:
+JWT signing key, sets user secrets and starts PostgreSQL (an already running
+server at the configured address, otherwise the Docker container) — then use
+the run script every time after. The API applies migrations and seeds demo
+data on its first start.
 
 ```powershell
 pwsh -File scripts/init.ps1   # one-time setup (safe to re-run)
 pwsh -File scripts/run.ps1    # start the API -> http://localhost:15080/swagger
 ```
 
+The scripts work from any directory (also as `.\scripts\run.ps1` in an open
+shell) and leave the current location unchanged, including after Ctrl+C.
+
 ### Manual setup (what the scripts do)
 
 #### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- Docker (for the local PostgreSQL database)
+- Docker (for the local PostgreSQL database), or an existing PostgreSQL server
 - Python 3 (optional, for the smoke test)
 
 #### 1. PostgreSQL database (Docker)
@@ -68,10 +73,8 @@ The app uses user secrets for the JWT signing key and the database connection
 string. Set them once:
 
 ```powershell
-cd Recall.Api
-dotnet user-secrets init
-dotnet user-secrets set "Jwt:Secret" "<generate-a-random-key>"
-dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=15432;Database=recall;Username=recall;Password=recall"
+dotnet user-secrets set "Jwt:Secret" "<generate-a-random-key>" --project Recall.Api
+dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=15432;Database=recall;Username=recall;Password=recall" --project Recall.Api
 ```
 
 The local Docker PostgreSQL connection (above) is the demonstration default —
@@ -138,9 +141,8 @@ Recall.Api/          REST API (.NET 10, EF Core, JWT, Swagger)
 Recall.Api.Tests/    xUnit tests (SM-2 scheduler, OpenAPI examples)
 api-spec.json/yaml   OpenAPI 3.0 specification with examples
 postman/             Postman collection (endpoint demonstration)
-scripts/             init.ps1 (setup) + run.ps1 (launch) + sync-api-docs.ps1
-labs/lab1/           Lab 1 description and smoke test
-docs/                Architecture documentation
+scripts/             init.ps1 (setup) + run.ps1 (launch) + sync-api-docs.ps1 + common.ps1 (shared helpers)
+labs/lab1/           Lab 1 smoke test (73 checks)
 ```
 
 ## Project task

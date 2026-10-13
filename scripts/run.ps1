@@ -2,50 +2,27 @@
 # scripts/run.ps1 - start the Recall API (uses the setup from scripts/init.ps1).
 # Optional: -NoBuild to skip the build. Uses any PostgreSQL already reachable at the
 # connection string's host:port; falls back to the Docker container from init.ps1.
+# Runs from any directory and leaves the caller's location unchanged.
 
 param([switch]$NoBuild)
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+. (Join-Path $PSScriptRoot 'common.ps1')
 
-# 1. Ensure user secrets exist (generates them if init.ps1 was never run).
-$apiDir = Join-Path $root 'Recall.Api'
-Set-Location $apiDir
-$secretCount = (dotnet user-secrets list 2>$null | Measure-Object).Count
-if ($secretCount -lt 2 -and $secretCount -ne 2) {
-    if ($secretCount -lt 2) {
-        Write-Host "[run] User secrets missing - running first-time setup..." -ForegroundColor Yellow
-        & (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'init.ps1')
-    }
+# 1. Ensure user secrets exist (runs first-time setup if init.ps1 was never run).
+$secretCount = @(dotnet user-secrets list --project $ApiDir 2>$null |
+    Where-Object { $_ -match '^(Jwt:Secret|ConnectionStrings:Default)\s*=' }).Count
+if ($secretCount -lt 2) {
+    Write-Host "[run] User secrets missing - running first-time setup..." -ForegroundColor Yellow
+    & (Join-Path $PSScriptRoot 'init.ps1')
 }
 
 # 2. Ensure PostgreSQL is reachable: an already running server (any local install)
 #    is used as is; otherwise start the Docker container created by init.ps1.
-
-# Host/port from ConnectionStrings:Default (user secrets, else environment); demo default localhost:15432.
-function Get-DbTarget {
-  $cs = dotnet user-secrets list 2>$null | ForEach-Object { if ($_ -match '^ConnectionStrings:Default\s*=\s*(.+)$') { $Matches[1] } } | Select-Object -First 1
-  if (-not $cs) { $cs = $env:ConnectionStrings__Default }
-  $target = [pscustomobject]@{ Host = 'localhost'; Port = 15432 }
-  if ($cs) {
-    if ($cs -match '(?i)(?:^|;)\s*(?:Host|Server)\s*=\s*([^;]+)') { $target.Host = $Matches[1].Trim() }
-    $target.Port = if ($cs -match '(?i)(?:^|;)\s*Port\s*=\s*(\d+)') { [int]$Matches[1] } else { 5432 }
-  }
-  $target
-}
-
-# TCP probe with a short timeout (works in Windows PowerShell 5.1 and pwsh 7).
-function Test-DbReachable([string]$DbHost, [int]$Port) {
-  $client = New-Object System.Net.Sockets.TcpClient
-  try { return $client.ConnectAsync($DbHost, $Port).Wait(1500) -and $client.Connected }
-  catch { return $false }
-  finally { $client.Dispose() }
-}
-
 $db = Get-DbTarget
 $dbAddr = "$($db.Host):$($db.Port)"
 $pgOk = Test-DbReachable $db.Host $db.Port
 if ($pgOk) {
-  Write-Host "[run] PostgreSQL is reachable at $dbAddr." -ForegroundColor Green
+    Write-Host "[run] PostgreSQL is reachable at $dbAddr." -ForegroundColor Green
 }
 elseif (Get-Command docker -ErrorAction SilentlyContinue) {
     docker info *> $null
@@ -68,17 +45,17 @@ elseif (Get-Command docker -ErrorAction SilentlyContinue) {
     }
 }
 if (-not $pgOk) {
-    $why = if (Get-Command docker -ErrorAction SilentlyContinue) { 'the Docker container did not come up' } else { 'Docker is not installed to start the demo container' }
-    Write-Warning "No PostgreSQL answers at $dbAddr ($why)."
-    Write-Host "       The API starts anyway, but every database request fails until a PostgreSQL" -ForegroundColor Yellow
-    Write-Host "       server runs at $dbAddr - start it, then restart the API. Details: scripts/init.ps1." -ForegroundColor Yellow
+    # The API applies migrations at startup, so it cannot run without a database.
+    $why = if (Get-Command docker -ErrorAction SilentlyContinue) { 'the Docker engine or container did not come up' } else { 'Docker is not installed to start the demo container' }
+    Write-Host "[run] No PostgreSQL answers at $dbAddr ($why)." -ForegroundColor Red
+    Write-Host "      Start PostgreSQL there (or Docker Desktop), then re-run. Details: scripts/init.ps1." -ForegroundColor Yellow
+    exit 1
 }
 
-# 3. Run the API in this console (Ctrl+C to stop).
+# 3. Run the API in this console (Ctrl+C to stop). With --project, dotnet run uses
+#    the project's launch profile and Recall.Api as content root from any location.
 Write-Host "=== Recall API -> http://localhost:15080/swagger ===" -ForegroundColor Cyan
-if ($NoBuild) {
-    dotnet run --no-build --urls "http://localhost:15080"
-} else {
-    dotnet run --urls "http://localhost:15080"
-}
+$runArgs = @('run', '--project', $ApiDir, '--urls', 'http://localhost:15080')
+if ($NoBuild) { $runArgs += '--no-build' }
+dotnet @runArgs
 Write-Host "API exited with code $LASTEXITCODE" -ForegroundColor Yellow
