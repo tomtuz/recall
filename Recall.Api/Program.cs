@@ -18,9 +18,9 @@ builder.Services.AddDbContext<RecallDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddSingleton<PasswordHasher>();
 
-// JWT bearer authentication: role and user id travel inside the signed token.
+// JWT bearer authentication; Development without Jwt:Secret signs with a random per-run key.
 var jwtSecret = (exportOpenApi ? Convert.ToBase64String(new byte[64]) : builder.Configuration["Jwt:Secret"])
-    ?? throw new InvalidOperationException("Jwt:Secret is not configured.");
+    ?? (builder.Environment.IsDevelopment() ? Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64)) : throw new InvalidOperationException("Jwt:Secret is not configured."));
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "recall-api";
 // SameSite=Lax is used for localhost and the planned same-origin Azure deployment.
 var cookieSameSite = builder.Configuration.GetValue<bool>("Auth:CookieSameSiteNone")

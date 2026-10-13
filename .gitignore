@@ -14,11 +14,11 @@
 __pycache__/
 *.pyc
 
-# Secrets & environment: never commit real credentials or the dev signing key.
+# Secrets & environment: never commit real credentials or signing keys
+# (appsettings.Development.json holds only the local Docker database default).
 .env
 .env.*
 !.env.example
-**/appsettings.Development.json
 *.db
 *.sqlite
 *.sqlite-*
