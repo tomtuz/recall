@@ -85,6 +85,6 @@ if ($dbReady) {
     Write-Host "Setup incomplete: no database at $dbAddr. The API applies migrations at startup," -ForegroundColor Yellow
     Write-Host "so it cannot start until PostgreSQL runs there (see above). Once it does, start it with:" -ForegroundColor Yellow
 }
-Write-Host "  pwsh -File scripts/run.ps1" -ForegroundColor White
-Write-Host "or:" -ForegroundColor Cyan
-Write-Host "  dotnet run --project Recall.Api --urls http://localhost:15080" -ForegroundColor White
+Write-Host "  ./index.ps1                      (new terminal tab)" -ForegroundColor White
+Write-Host "or, with hot reload:" -ForegroundColor Cyan
+Write-Host "  ./index.ps1 watch                (this console, http://localhost:15080/swagger)" -ForegroundColor White

@@ -2,16 +2,20 @@
 # index.ps1 - Recall quick launcher (run from any directory: .\index.ps1 or pwsh -File index.ps1).
 #
 #   .\index.ps1          start (or restart) the API in a new Windows Terminal tab
+#   .\index.ps1 watch    replace a running API with `dotnet watch run` (hot reload) in this console
+#   .\index.ps1 setup    user secrets + PostgreSQL only (then `dotnet watch run` in Recall.Api)
 #   .\index.ps1 stop     stop this checkout's running API
 #   .\index.ps1 status   Docker / PostgreSQL / API port report
 #   .\index.ps1 test     Playwright API tests against the running API (starts one if needed)
+#   .\index.ps1 spec     regenerate api-spec.json / api-spec.yaml
 #
+# The scripts/ folder holds the implementation; this file is the entry point.
 # The API tab runs scripts/run.ps1, which sets up user secrets and PostgreSQL on
 # first use. A stale API from this checkout is stopped first; any other process
 # on the port aborts the launch instead of being touched.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive launcher: colored console output is the UI.')]
-param([Parameter(Position = 0)][ValidateSet('start', 'stop', 'status', 'test')][string]$Action = 'start')
+param([Parameter(Position = 0)][ValidateSet('start', 'watch', 'setup', 'stop', 'status', 'test', 'spec')][string]$Action = 'start')
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'scripts\common.ps1')
@@ -34,7 +38,18 @@ function Stop-Api {
         }
     }
     foreach ($p in $owners) {
-        Stop-Process -Id $p.Id -Force
+        # dotnet watch runs the app as watch -> dotnet-watch.dll -> dotnet run (DOTNET_WATCH=1) -> exe and
+        # would restart it on the next edit: stop that whole dotnet chain, outermost first.
+        $chain = @()
+        $node = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)" -ErrorAction SilentlyContinue
+        while ($node -and $node.ParentProcessId) {
+            $node = Get-CimInstance Win32_Process -Filter "ProcessId=$($node.ParentProcessId)" -ErrorAction SilentlyContinue
+            if (-not $node -or $node.Name -ne 'dotnet.exe' -or $node.CommandLine -notmatch 'watch') { break }
+            $chain = @($node) + $chain
+        }
+        foreach ($w in $chain) { Stop-Process -Id $w.ProcessId -Force -ErrorAction SilentlyContinue }
+        if ($chain) { Write-Host "Stopped its dotnet watch (PID $($chain[0].ProcessId))." -ForegroundColor Yellow }
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
         Write-Host "Stopped the running API (PID $($p.Id))." -ForegroundColor Yellow
     }
     if (-not (Wait-Port $ApiPort $false 10)) { throw "Port $ApiPort did not free up." }
@@ -89,7 +104,10 @@ function Invoke-Tests {
 
 switch ($Action) {
     'start' { Start-Api }
+    'watch' { Stop-Api; & (Join-Path $PSScriptRoot 'scripts\run.ps1') -Watch }
+    'setup' { & (Join-Path $PSScriptRoot 'scripts\init.ps1') }
     'stop' { Stop-Api }
     'status' { Show-Status }
     'test' { Invoke-Tests }
+    'spec' { & (Join-Path $PSScriptRoot 'scripts\sync-api-docs.ps1') }
 }

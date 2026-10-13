@@ -1,11 +1,11 @@
 #!/usr/bin/env pwsh
 # scripts/run.ps1 - start the Recall API (uses the setup from scripts/init.ps1).
-# Optional: -NoBuild to skip the build. Uses any PostgreSQL already reachable at the
+# Optional: -NoBuild to skip the build; -Watch for dotnet watch (hot reload). Uses any PostgreSQL already reachable at the
 # connection string's host:port; falls back to the Docker container from init.ps1.
 # Runs from any directory and leaves the caller's location unchanged.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive console script: colored status output.')]
-param([switch]$NoBuild)
+param([switch]$NoBuild, [switch]$Watch)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
@@ -32,7 +32,7 @@ elseif (Get-Command docker -ErrorAction SilentlyContinue) {
         if ($status -ne 'running') {
             if ($status -eq 'exited') { docker start recall-pg *> $null }
             else {
-                Write-Host "[run] PostgreSQL container missing - run scripts/init.ps1 first (creating basic one now)..." -ForegroundColor Yellow
+                Write-Host "[run] PostgreSQL container missing - run ./index.ps1 setup first (creating basic one now)..." -ForegroundColor Yellow
                 docker run -d --name recall-pg `
                     -e POSTGRES_USER=recall -e POSTGRES_PASSWORD=recall -e POSTGRES_DB=recall `
                     -p 15432:5432 postgres:16-alpine *> $null
@@ -49,7 +49,7 @@ if (-not $pgOk) {
     # The API applies migrations at startup, so it cannot run without a database.
     $why = if (Get-Command docker -ErrorAction SilentlyContinue) { 'the Docker engine or container did not come up' } else { 'Docker is not installed to start the demo container' }
     Write-Host "[run] No PostgreSQL answers at $dbAddr ($why)." -ForegroundColor Red
-    Write-Host "      Start PostgreSQL there (or Docker Desktop), then re-run. Details: scripts/init.ps1." -ForegroundColor Yellow
+    Write-Host "      Start PostgreSQL there (or Docker Desktop), then re-run. Setup: ./index.ps1 setup." -ForegroundColor Yellow
     exit 1
 }
 
@@ -67,5 +67,6 @@ if ($owner) {
 Write-Host "=== Recall API -> http://localhost:$ApiPort/swagger ===" -ForegroundColor Cyan
 $runArgs = @('run', '--project', $ApiDir, '--urls', "http://localhost:$ApiPort")
 if ($NoBuild) { $runArgs += '--no-build' }
+if ($Watch) { $runArgs = @('watch', '--project', $ApiDir, 'run', '--urls', "http://localhost:$ApiPort") }
 dotnet @runArgs
 Write-Host "API exited with code $LASTEXITCODE" -ForegroundColor Yellow
