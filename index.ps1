@@ -90,14 +90,12 @@ function Invoke-Tests {
     Push-Location $testDir
     try {
         if (-not (Test-Path 'node_modules')) { npm ci; if ($LASTEXITCODE -ne 0) { throw 'npm ci failed.' } }
-        # Reuse a running API; otherwise Playwright starts and stops its own.
-        $env:RECALL_REUSE_API = if (Get-PortOwner $ApiPort) { '1' } else { $null }
+        # Playwright reuses a running API; otherwise it starts and stops its own.
         npm test
         $code = $LASTEXITCODE
         Write-Host "HTML report: npm run show-report (in tests/api)" -ForegroundColor DarkGray
         exit $code
     } finally {
-        Remove-Item Env:RECALL_REUSE_API -ErrorAction SilentlyContinue
         Pop-Location
     }
 }

@@ -22,13 +22,12 @@ npm run show-report   # HTML report: tests/api/playwright-report/index.html
 
 ## Server lifecycle
 
-- Prerequisites: Node.js/npm, the .NET 10 SDK and the local setup from
-  `scripts/init.ps1` (user secrets + PostgreSQL on port 15432).
-- By default Playwright starts the API itself
+- Prerequisites: Node.js/npm, the .NET 10 SDK and PostgreSQL on port 15432
+  (see the main README).
+- An API already running on port 15080 is reused. Otherwise Playwright starts one
   (`dotnet run --project ../../Recall.Api --urls http://localhost:15080`), waits
-  for a database-backed response and stops it afterwards. Port 15080 must then be free.
-- To test an already running API, set `$env:RECALL_REUSE_API='1'` before
-  `npm test`; `.\index.ps1 test` does this automatically when the API is up.
+  for a database-backed response and stops it afterwards. In CI (`CI` set) it always
+  starts its own.
 - Use a local development database only: the API applies migrations and the
   Development seed at startup.
 

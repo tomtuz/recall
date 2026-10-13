@@ -15,7 +15,7 @@ export default defineConfig({
     command: 'dotnet run --project ../../Recall.Api --urls http://localhost:15080',
     url: `${baseURL}/api/v1/courses?pageSize=1`,
     timeout: 120_000,
-    reuseExistingServer: process.env.RECALL_REUSE_API === '1',
+    reuseExistingServer: !process.env.CI, // locally, test an API that is already running
     env: { ASPNETCORE_ENVIRONMENT: 'Development' },
   },
 });
