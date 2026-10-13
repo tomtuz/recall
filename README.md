@@ -16,6 +16,9 @@ dotnet watch run
 
 Open <http://localhost:15080/swagger>. The first start creates the tables and the demo data.
 
+HTTPS with `Secure` refresh cookies (development certificate):
+`dotnet run --project Recall.Api --launch-profile https` → <https://localhost:15443/swagger>.
+
 ## Windows
 
 ```ps1
@@ -75,3 +78,10 @@ dotnet run --project Recall.Api --no-launch-profile -- --export-openapi .
 ```
 
 Postman tests: [`postman/`](postman/Recall.postman_collection.json).
+
+## Labs
+
+- Lab 1 (REST API): `labs/lab1/` — smoke test and defense probe.
+- Lab 2 (JWT, refresh-token rotation, roles): [`labs/lab2/README.md`](labs/lab2/README.md) —
+  tokens, cookies, roles and threats.
+- Cloud deployment: planned (Azure for Students), not deployed yet.
