@@ -30,8 +30,8 @@ public record CourseDto(int Id, string Code, string Title, string Description, s
 public record TopicDto(int Id, int CourseId, string CourseTitle, string Title, int Position, string Summary, DateTime CreatedAt, DateTime UpdatedAt);
 public record CardDto(int Id, int TopicId, string TopicTitle, string Question, string Answer, string? Hint, int Difficulty, string Tags, string State, double Ease, int IntervalDays, int Reps, int Lapses, DateTime? DueAt, DateTime? LastReviewedAt, DateTime CreatedAt, DateTime UpdatedAt);
 
-// Untyped composite/review responses: runtime stays anonymous, but these records
-// give the OpenAPI contract real success-response schemas.
+// Typed composite/review responses: runtime returns these records and the
+// OpenAPI contract gets real success-response schemas from the same shapes.
 public record DifficultyMixDto(double Average, int Hardest);
 
 public record TopicOverviewDto(int Id, string Title, int Position, int CardCount, int DueCount);

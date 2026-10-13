@@ -85,4 +85,54 @@ public class SwaggerExamplesTests
             if (Directory.Exists(directory)) Directory.Delete(directory, true);
         }
     }
+
+    [Fact]
+    public async Task Composite_and_review_success_responses_reference_typed_schemas()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "recall-openapi-" + Guid.NewGuid());
+        try
+        {
+            var entry = typeof(Program).Assembly.EntryPoint!;
+            var invocation = entry.Invoke(null, [new[] { "--export-openapi", directory }]);
+            if (invocation is Task pendingExport) await pendingExport;
+            using var json = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "api-spec.json")));
+            var paths = json.RootElement.GetProperty("paths");
+
+            // The five formerly-anonymous ops must reference the runtime
+            // records the handlers now actually return.
+            var contracts = new (string Path, string Method, string Status, string Schema)[]
+            {
+                ("/api/v1/courses/{id}/overview", "get", "200", "CourseOverviewDto"),
+                ("/api/v1/me/dashboard", "get", "200", "DashboardDto"),
+                ("/api/v1/review/queue", "get", "200", "ReviewQueueDto"),
+                ("/api/v1/cards/{id}/review", "post", "200", "CardReviewDto"),
+                ("/api/v1/topics/{id}/cards/import", "post", "201", "CardImportDto"),
+            };
+            foreach (var (path, method, status, schemaName) in contracts)
+            {
+                var response = paths.GetProperty(path).GetProperty(method)
+                    .GetProperty("responses").GetProperty(status)
+                    .GetProperty("content").GetProperty("application/json");
+                Assert.Equal($"#/components/schemas/{schemaName}",
+                    response.GetProperty("schema").GetProperty("$ref").GetString());
+            }
+
+            // Representative nested properties prove the schemas are real shapes.
+            var schemas = json.RootElement.GetProperty("components").GetProperty("schemas");
+            var overview = schemas.GetProperty("CourseOverviewDto").GetProperty("properties");
+            Assert.True(overview.TryGetProperty("difficultyMix", out _));
+            Assert.True(overview.TryGetProperty("topics", out _));
+            var queue = schemas.GetProperty("ReviewQueueDto").GetProperty("properties");
+            Assert.True(queue.TryGetProperty("data", out _));
+            Assert.True(queue.TryGetProperty("count", out _));
+            var review = schemas.GetProperty("CardReviewDto").GetProperty("properties");
+            Assert.True(review.TryGetProperty("nextDueAt", out _));
+            var import = schemas.GetProperty("CardImportDto").GetProperty("properties");
+            Assert.True(import.TryGetProperty("cards", out _));
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
+    }
 }

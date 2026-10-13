@@ -673,27 +673,22 @@ api.MapGet("/courses/{id:int}/overview", async (RecallDbContext db, ClaimsPrinci
         .Select(g => new { State = g.Key, Count = g.Count() })
         .ToDictionaryAsync(x => x.State.ToString(), x => x.Count);
 
-    var overview = new
-    {
-        course = course.ToDto(),
-        topicCount = topics.Count,
-        cardCount = cardsAgg?.Count ?? 0,
-        dueCount = cardsAgg?.Due ?? 0,
-        stateBreakdown = perState,
-        difficultyMix = new
+    var overview = new CourseOverviewDto(
+        course.ToDto(),
+        topics.Count,
+        cardsAgg?.Count ?? 0,
+        cardsAgg?.Due ?? 0,
+        perState,
+        new DifficultyMixDto(
+            cardsAgg is null ? 0 : Math.Round(cardsAgg.Average, 2),
+            cardsAgg?.Hardest ?? 0),
+        topics.Select(t =>
         {
-            average = cardsAgg is null ? 0 : Math.Round(cardsAgg.Average, 2),
-            hardest = cardsAgg?.Hardest ?? 0,
-        },
-        topics = topics.Select(t => new
-        {
-            t.Id,
-            t.Title,
-            t.Position,
-            cardCount = perTopic.TryGetValue(t.Id, out var agg) ? agg.Count : 0,
-            dueCount = perTopic.TryGetValue(t.Id, out agg) ? agg.Due : 0,
-        }),
-    };
+            perTopic.TryGetValue(t.Id, out var agg);
+            return new TopicOverviewDto(
+                t.Id, t.Title, t.Position,
+                agg?.Count ?? 0, agg?.Due ?? 0);
+        }).ToList());
 
     return Results.Ok(overview);
 })
@@ -710,15 +705,13 @@ api.MapGet("/me/dashboard", async (RecallDbContext db, ClaimsPrincipal user) =>
     var cards = await db.Cards.Where(c => ownTopicIds.Contains(c.TopicId)).ToListAsync();
     var now = DateTime.UtcNow;
 
-    var dashboard = new
-    {
-        dueToday = cards.Count(c => c.DueAt != null && c.DueAt <= now),
-        newCount = cards.Count(c => c.State == CardState.New),
-        learningCount = cards.Count(c => c.State == CardState.Learning || c.State == CardState.Relearning),
-        reviewCount = cards.Count(c => c.State == CardState.Review),
-        courseCount = ownCourseIds.Count,
-        stateBreakdown = cards.GroupBy(c => c.State.ToString()).ToDictionary(g => g.Key, g => g.Count()),
-    };
+    var dashboard = new DashboardDto(
+        cards.Count(c => c.DueAt != null && c.DueAt <= now),
+        cards.Count(c => c.State == CardState.New),
+        cards.Count(c => c.State == CardState.Learning || c.State == CardState.Relearning),
+        cards.Count(c => c.State == CardState.Review),
+        ownCourseIds.Count,
+        cards.GroupBy(c => c.State.ToString()).ToDictionary(g => g.Key, g => g.Count()));
 
     return Results.Ok(dashboard);
 })
@@ -747,17 +740,15 @@ api.MapGet("/review/queue", async (RecallDbContext db, ClaimsPrincipal user, int
         .Take(size)
         .ToListAsync();
 
-    var dtoCards = dueCards.Select(c => new
-    {
-        card = c.ToDto(),
-        links = new Dictionary<string, Link>
+    var dtoCards = dueCards.Select(c => new ReviewQueueItemDto(
+        c.ToDto(),
+        new Dictionary<string, Link>
         {
             ["review"] = Links.Post($"/api/v1/cards/{c.Id}/review"),
             ["self"] = Links.Self($"/api/v1/cards/{c.Id}"),
-        },
-    });
+        })).ToList();
 
-    return Results.Ok(new { data = dtoCards, count = dueCards.Count });
+    return Results.Ok(new ReviewQueueDto(dtoCards, dueCards.Count));
 })
 .Produces<ReviewQueueDto>(StatusCodes.Status200OK)
 .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
@@ -789,13 +780,8 @@ api.MapPost("/cards/{id:int}/review", async (RecallDbContext db, ClaimsPrincipal
 
     await db.SaveChangesAsync();
 
-    return Results.Ok(new
-    {
-        card = card.ToDto(),
-        appliedRating = req.Rating,
-        nextDueAt = dueAt,
-        intervalDays = interval,
-    });
+    return Results.Ok(new CardReviewDto(
+        card.ToDto(), req.Rating, dueAt, interval));
 })
 .Produces<CardReviewDto>(StatusCodes.Status200OK)
 .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
@@ -859,7 +845,9 @@ api.MapPost("/topics/{id:int}/cards/import", async (RecallDbContext db, ClaimsPr
     db.Cards.AddRange(valid);
     await db.SaveChangesAsync();
 
-    return Results.Created($"/api/v1/topics/{id}/cards", new { imported = valid.Count, cards = valid.Select(Mappers.ToDto) });
+    return Results.Created(
+        $"/api/v1/topics/{id}/cards",
+        new CardImportDto(valid.Count, valid.Select(Mappers.ToDto).ToList()));
 })
 .Produces<CardImportDto>(StatusCodes.Status201Created)
 .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
