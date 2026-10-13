@@ -1,44 +1,37 @@
 # Recall
 
-Spaced-repetition flashcards.
-
-REST API for **Course → Topic → Card**
+Spaced-repetition flashcards: REST API for **Course → Topic → Card**
 (ASP.NET Core .NET 10, EF Core, PostgreSQL, JWT).
 
 Project task: [Wiki](https://github.com/tomtuz/recall/wiki).
 
-Requires .NET 10 SDK, PowerShell 7 and Docker Desktop; tests also use Node.js and Python 3.
-
 ## Start
 
-```powershell
-./index.ps1
+Requires the .NET 10 SDK and PostgreSQL.
+
+```sh
+cd Recall.Api
+dotnet watch run
 ```
 
-Sets up user secrets and PostgreSQL on first run, then opens the API in a new tab:
-<http://localhost:15080/swagger>. Also `./index.ps1 stop | status`.
+Open <http://localhost:15080/swagger>. The first start creates the tables and the demo data.
 
-Or with hot reload in this console (replaces a running API):
+## Windows
 
-```powershell
-./index.ps1 watch
+```ps1
+./index.ps1 -|watch|stop|status|test|spec
 ```
 
-Plain `dotnet watch run` in `Recall.Api` also works once `./index.ps1 setup` has run and no other API instance is running.
+- Uses Docker
+- Keeps a fixed signing key in user secrets
 
-## Test
+## Database
 
-```powershell
-dotnet test Recall.slnx --artifacts-path .artifacts
-./index.ps1 test
-```
+**1. Database** (once): user, password and database `recall`.
 
-With the API running:
-
-```powershell
-python labs/lab1/smoke_test.py
-python labs/lab1/defense_probe.py
-npx --yes newman@6 run postman/Recall.postman_collection.json
+Docker:
+```bash
+docker run -d --name recall-pg -p 15432:5432 -e POSTGRES_USER=recall -e POSTGRES_PASSWORD=recall -e POSTGRES_DB=recall postgres:16-alpine
 ```
 
 ## Demo users
@@ -50,10 +43,35 @@ npx --yes newman@6 run postman/Recall.postman_collection.json
 | `learner@recall.local` | `Learner123!` | Contributor |
 
 Seeded in Development only. Guests (no token) can read public courses.
+Development signs tokens with a new random key on each start, so log in again after a restart.
+
+## Test
+
+With the API running:
+
+```bash
+npx --yes newman@6 run postman/Recall.postman_collection.json
+```
+
+More:
+```sh
+# (unit)
+dotnet test Recall.slnx --artifacts-path .artifacts
+npm --prefix tests/api ci
+
+# (Playwright)
+npm --prefix tests/api test
+python3 labs/lab1/smoke_test.py
+python3 labs/lab1/defense_probe.py
+```
 
 ## API
 
-OpenAPI: [`api-spec.json`](api-spec.json) / [`api-spec.yaml`](api-spec.yaml) (regenerate: `./index.ps1 spec`).
-Postman: [`postman/`](postman/Recall.postman_collection.json).
+OpenAPI: [`api-spec.json`](api-spec.json) / [`api-spec.yaml`](api-spec.yaml)
 
-Status: Lab 1 REST API done; cloud deployment not yet; React SPA (`Recall.Web/`) in Lab 3.
+Regenerate: 
+```sh
+dotnet run --project Recall.Api --no-launch-profile -- --export-openapi .
+```
+
+Postman tests: [`postman/`](postman/Recall.postman_collection.json).
