@@ -64,12 +64,15 @@ def main():
         ("non-numeric id", "GET", "/courses/abc", {}, 404),
         ("unknown route", "GET", "/nope", {}, 404),
         ("wrong method PUT", "PUT", f"/courses/{course}", {"body": {}}, 405),
-        # Query parameters: out-of-range paging is clamped, unknown sort falls back to the default
+        # Query parameters: out-of-range paging is clamped; unknown filter/sort values are rejected
         ("page=0 clamped", "GET", "/courses?page=0", {}, 200),
         ("page=-5 clamped", "GET", "/courses?page=-5", {}, 200),
         ("pageSize=100000 clamped", "GET", "/courses?pageSize=100000", {}, 200),
         ("pageSize not a number", "GET", "/courses?pageSize=abc", {}, 400),
-        ("unknown sort field", "GET", "/courses?sort=hacker", {}, 200),
+        ("unknown sort field", "GET", "/courses?sort=hacker", {}, 400),
+        ("unknown visibility filter", "GET", "/courses?visibility=secret", {}, 400),
+        ("unknown card state filter", "GET", f"/topics/{topic}/cards?state=bogus", {}, 400),
+        ("numeric card state filter", "GET", f"/topics/{topic}/cards?state=2", {}, 400),
         ("SQL-ish search is plain text", "GET", "/courses?search=%27%3B%20DROP%20TABLE%20courses%3B--", {}, 200),
         # Authentication
         ("POST without token", "POST", "/courses", {"body": {"code": "X", "title": "X"}}, 401),
@@ -89,6 +92,8 @@ def main():
         ("text/plain body", "POST", "/courses", {"raw": b"hello", "token": tok, "ctype": "text/plain"}, 415),
         ("review rating not allowed", "POST", f"/cards/{card}/review", {"body": {"rating": "perfect"}, "token": tok}, 400),
         ("import body not a card list", "POST", f"/topics/{topic}/cards/import", {"body": {"x": 1}, "token": tok}, 400),
+        ("import over 200 cards", "POST", f"/topics/{topic}/cards/import",
+         {"body": {"cards": [{"question": "Q", "answer": "A"}] * 201}, "token": tok}, 400),
         ("register duplicate email", "POST", "/auth/register", {"body": {"email": "author@recall.local", "password": "Author123!", "displayName": "dup"}}, 409),
         ("register invalid email", "POST", "/auth/register", {"body": {"email": "not-an-email", "password": "x"}}, 400),
         # Ownership: another user's public course is readable but not writable

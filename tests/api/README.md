@@ -40,6 +40,7 @@ npm run show-report   # HTML report: tests/api/playwright-report/index.html
 | `courses.spec.ts` | course CRUD; search, sorting, pagination metadata and next-page link |
 | `hierarchy.spec.ts` | Course → Topic → Card nesting, card filtering, full-path `/courses/{id}/topics/{id}/cards` (404 for a topic of another course), `/courses/{id}/overview` aggregates, updates, parent-delete 409 |
 | `errors.spec.ts` | private-course ownership (403/404), 401 unauthenticated mutation, 404 unknown resources, 400 validation |
+| `integrity.spec.ts` | 5 concurrent reviews end in the same scheduler state as 5 sequential ones, topic position overflow → 409, text stored trimmed as validated, unknown filter/sort values → 400, import (200 cards) and password (128 chars) caps, `WWW-Authenticate` on 401 |
 | `regressions.spec.ts` | logout revokes the token family, NUL input, text limits, malformed JSON, origin gate on auth routes |
 
 ## Isolation
