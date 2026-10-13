@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Recall API — Lab 1",
-    "description": "Covers all Recall API endpoints: auth, CRUD+LIST for Course/Topic/Card, hierarchical endpoint, composite reads, review feature, bulk import, and the negative cases required by the rubric (401/403/404/409/400). Login requests store tokens automatically; run the folder order top-to-bottom for the 15-second demonstration.",
+    "description": "Lab 1 demonstration of the Recall REST API (Course → Topic → Card). Run the whole collection with the Runner, folders top to bottom: every request asserts its exact status code.\n\n**Before running:** start the API (`./index.ps1`, http://localhost:15080). No environment is needed; all values are collection variables.\n\n**How the run is chained**\n- Logins store `adminToken`, `authorToken`, `learnerToken`. `accessToken` is the current token: set by *Register*, then replaced by the refreshed **admin** token in *Refresh (rotation)*, so later `{{accessToken}}` requests act as the administrator.\n- Each create stores its id (`newCourseId` → `newTopicId` → `newCardId`) and the next folder creates its child under it, so folder order matters.\n- Reads and negative checks use the seeded ids (`courseId = topicId = cardId = 1`, owned by `author@recall.local`); writes only touch objects the run created. The cleanup requests delete them, so the collection can be rerun any number of times (44 HTTP calls: 41 requests + 3 card deletes sent by a cleanup script).\n\n**Tokens**\n- Access token: JWT, 15 minutes, sent as `Authorization: Bearer …`. Stateless: valid until it expires.\n- Refresh token: 7 days, single use. Browsers get it only in the HttpOnly cookie `recall_refresh` (path `/api/v1/auth`); clients without an `Origin` header (Postman) also get it in the JSON body.\n\n**Roles:** guest (no token: reads public courses), Contributor (creates content, edits only their own), Administrator (edits anything).\n\n**Errors** always look like `{ \"errors\": [ { \"code\": \"…\", \"message\": \"…\" } ] }`. Codes used: 400 invalid input, 401 not authenticated (with `WWW-Authenticate: Bearer`), 403 not allowed, 404 not found (also for private courses of others), 409 conflicts with current state.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -22,11 +22,13 @@
   "item": [
     {
       "name": "Auth",
+      "description": "Login for the three demo users (admin; author = owner of the seeded course; learner = another Contributor), registration, and the refresh-token rotation with reuse detection. Run first: later folders use the tokens stored here.",
       "item": [
         {
           "name": "Login as admin",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `200` with `accessToken` (JWT, 15 min), `refreshToken` (7 days) and `user` (role `Administrator`). Also sets the `recall_refresh` HttpOnly cookie. Stores `adminToken` and `refreshToken`.\n\n**Why:** Admin requests later in the run need this token, and its refresh token is the one the rotation requests work on.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/auth/login", "host": ["{{apiPrefix}}"], "path": ["auth", "login"] },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@recall.local\",\n  \"password\": \"Admin123!\"\n}" }
@@ -49,6 +51,7 @@
           "name": "Login as author",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `200`; stores `authorToken`. The author (Contributor) owns seeded course 1.\n\n**Why:** Owner-only actions on seeded data use it: delete conflicts, dashboard, review queue and review.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/auth/login", "host": ["{{apiPrefix}}"], "path": ["auth", "login"] },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"author@recall.local\",\n  \"password\": \"Author123!\"\n}" }
@@ -69,6 +72,7 @@
           "name": "Login as learner",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `200`; stores `learnerToken`.\n\n**Why:** Same role as the author but not the owner, so the 403 in *Courses* proves an ownership rule, not a role rule.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/auth/login", "host": ["{{apiPrefix}}"], "path": ["auth", "login"] },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"learner@recall.local\",\n  \"password\": \"Learner123!\"\n}" }
@@ -89,6 +93,7 @@
           "name": "Register (409 duplicate)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `409 Conflict`: the email is already registered.\n\n**Why:** The body is well-formed but clashes with existing data, which is a conflict rather than invalid input (400). Emails are trimmed and lower-cased before the check.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/auth/register", "host": ["{{apiPrefix}}"], "path": ["auth", "register"] },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"author@recall.local\",\n  \"password\": \"SomePass123!\",\n  \"displayName\": \"Duplicate\"\n}" }
@@ -104,6 +109,7 @@
           "name": "Register new user (201)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `201 Created` with tokens and the new user. The role is always `Contributor`; the client cannot choose it. Stores `accessToken`.\n\n**Why:** `{{$timestamp}}` gives a new email on every run, so reruns never hit the 409 above.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/auth/register", "host": ["{{apiPrefix}}"], "path": ["auth", "register"] },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"demo-{{$timestamp}}@recall.local\",\n  \"password\": \"Demo12345!\",\n  \"displayName\": \"Demo User\"\n}" }
@@ -124,6 +130,7 @@
           "name": "Refresh (rotation)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `200` with a new access token and a new refresh token in the same token family. The presented refresh token is now revoked. Saves it as `oldRefreshToken`.\n\n**Why:** Rotation is the token renewal strategy: each refresh token works once. The SPA sends it in the cookie; Postman sends it in the body.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/auth/refresh", "host": ["{{apiPrefix}}"], "path": ["auth", "refresh"] },
             "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
@@ -147,6 +154,7 @@
           "name": "Refresh reuse (rotated token -> 401, family revoked)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `401`. Presenting an already rotated token revokes the whole family.\n\n**Why:** Reuse means two parties hold the same token (one of them stole it). Revoking the family ends the session for both.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/auth/refresh", "host": ["{{apiPrefix}}"], "path": ["auth", "refresh"] },
             "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{oldRefreshToken}}\"\n}" }
@@ -162,6 +170,7 @@
           "name": "Refresh successor also revoked (family)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `401` although this newest token was never used.\n\n**Why:** Shows that revocation covers the whole family, not only the replayed token.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/auth/refresh", "host": ["{{apiPrefix}}"], "path": ["auth", "refresh"] },
             "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
@@ -177,11 +186,13 @@
     },
     {
       "name": "Courses",
+      "description": "CRUD + list for the top-level object, plus 404, 409 (has children), 403 (not the owner) and the admin override.",
       "item": [
         {
           "name": "List (pagination + search)",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200` `{ data, links: {self, first, next?, prev?, create}, meta: {page, pageSize, totalItems, totalPages} }`. Tests check `meta.totalItems` and `links`.\n\n**Why:** List method for Course with pagination (`page`, `pageSize` ≤ 100), filtering (`search`, `visibility`), sorting (`sort=title|-title|code`) and hypermedia links. A guest sees public courses only; unknown filter values return 400.",
             "url": { "raw": "{{apiPrefix}}/courses?page=1&pageSize=3&search=web", "host": ["{{apiPrefix}}"], "path": ["courses"], "query": [{ "key": "page", "value": "1" }, { "key": "pageSize", "value": "3" }, { "key": "search", "value": "web" }] }
           },
           "event": [
@@ -201,6 +212,7 @@
           "name": "Create (201)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `201 Created`, `Location: /api/v1/courses/{id}`, body = the course. Stores `newCourseId`.\n\n**Why:** Create method; the caller becomes the owner. Created private so the update can show visibility changing.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -224,6 +236,7 @@
           "name": "Read one (200)",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200` with the course.\n\n**Why:** Read method. Needs the token while the course is private; without it the answer is 404.",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{apiPrefix}}/courses/{{newCourseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{newCourseId}}"] }
           },
@@ -238,6 +251,7 @@
           "name": "Update (PATCH 200)",
           "request": {
             "method": "PATCH",
+            "description": "**Expected:** `200` with the updated course; fields not sent stay unchanged.\n\n**Why:** Update method (partial, so PATCH rather than PUT). Making it public lets a guest read its topic later.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -256,6 +270,7 @@
           "name": "404 missing course",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `404` with `code: NOT_FOUND`.\n\n**Why:** Required demonstration: a resource that does not exist.",
             "url": { "raw": "{{apiPrefix}}/courses/99999", "host": ["{{apiPrefix}}"], "path": ["courses", "99999"] }
           },
           "event": [
@@ -269,6 +284,7 @@
           "name": "409 delete course with topics",
           "request": {
             "method": "DELETE",
+            "description": "**Expected:** `409 Conflict`: the course still has topics.\n\n**Why:** The owner may delete, so this is not 403; the current state forbids it. No cascade delete of learning data. *Cleanup: delete course* shows the success path.",
             "header": [{ "key": "Authorization", "value": "Bearer {{authorToken}}" }],
             "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}"] }
           },
@@ -283,6 +299,7 @@
           "name": "403 edit someone else's course",
           "request": {
             "method": "PATCH",
+            "description": "**Expected:** `403 Forbidden`: authenticated, but not the owner.\n\n**Why:** Separates authentication (401) from authorization (403). Course 1 is public, so admitting it exists is fine; another user's private course would answer 404.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{learnerToken}}" }
@@ -301,6 +318,7 @@
           "name": "Admin can edit any course (200)",
           "request": {
             "method": "PATCH",
+            "description": "**Expected:** `200`: the Administrator role overrides ownership.\n\n**Why:** The same kind of edit that gave the learner 403 succeeds for the admin (third role).",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{adminToken}}" }
@@ -319,11 +337,13 @@
     },
     {
       "name": "Topics",
+      "description": "CRUD + list for the second level (Course 1:N Topic). Creates its topic under the course made in *Courses*.",
       "item": [
         {
           "name": "List by course",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200` paged list of the course's topics, ordered by position.\n\n**Why:** List method for Topic, nested under its parent.",
             "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}/topics", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}", "topics"] }
           },
           "event": [
@@ -337,6 +357,7 @@
           "name": "Create (201)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `201`, `Location: /api/v1/topics/{id}`. Position defaults to last + 1. Stores `newTopicId`.\n\n**Why:** Create method; the parent comes from the URL, so a topic cannot exist without a course.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -360,6 +381,7 @@
           "name": "Read one (200)",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200` with the topic.\n\n**Why:** Read method. Works without a token because its course was made public in *Courses → Update*.",
             "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}"] }
           },
           "event": [
@@ -373,6 +395,7 @@
           "name": "Update (PATCH 200)",
           "request": {
             "method": "PATCH",
+            "description": "**Expected:** `200` with the updated topic.\n\n**Why:** Update method (partial).",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -391,6 +414,7 @@
           "name": "409 delete topic with cards",
           "request": {
             "method": "DELETE",
+            "description": "**Expected:** `409`: the topic still has cards.\n\n**Why:** Same no-cascade rule one level down. *Cleanup: delete topic* shows the success path (204).",
             "header": [{ "key": "Authorization", "value": "Bearer {{authorToken}}" }],
             "url": { "raw": "{{apiPrefix}}/topics/{{topicId}}", "host": ["{{apiPrefix}}"], "path": ["topics", "{{topicId}}"] }
           },
@@ -405,11 +429,13 @@
     },
     {
       "name": "Cards",
+      "description": "CRUD + list for the third level (Topic 1:N Card), a 400 payload check and a 404 after delete.",
       "item": [
         {
           "name": "List by topic (filters)",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200` paged cards filtered by learning state (`New`, `Learning`, `Review`, `Relearning`) and `due=true`.\n\n**Why:** List method for Card with filtering. An unknown `state` returns 400 instead of an empty list.",
             "url": { "raw": "{{apiPrefix}}/topics/{{topicId}}/cards?state=Review&due=true", "host": ["{{apiPrefix}}"], "path": ["topics", "{{topicId}}", "cards"], "query": [{ "key": "state", "value": "Review" }, { "key": "due", "value": "true" }] }
           },
           "event": [
@@ -423,6 +449,7 @@
           "name": "Create (201)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `201`, `Location: /api/v1/cards/{id}`; a new card starts in state `New`. Stores `newCardId`.\n\n**Why:** Create method for the third level of the hierarchy.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -446,6 +473,7 @@
           "name": "Read one (200)",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200` with the card.\n\n**Why:** Read method.",
             "url": { "raw": "{{apiPrefix}}/cards/{{newCardId}}", "host": ["{{apiPrefix}}"], "path": ["cards", "{{newCardId}}"] }
           },
           "event": [
@@ -459,6 +487,7 @@
           "name": "Update (PATCH 200)",
           "request": {
             "method": "PATCH",
+            "description": "**Expected:** `200` with the updated card.\n\n**Why:** Update method (partial).",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -477,6 +506,7 @@
           "name": "400 invalid payload (difficulty=9)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `400` with a validation error: difficulty must be 1–5. Nothing is saved.\n\n**Why:** Required demonstration: bad payload. The JSON is valid, so the error comes from the domain rule.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -495,6 +525,7 @@
           "name": "Delete (204)",
           "request": {
             "method": "DELETE",
+            "description": "**Expected:** `204 No Content`, empty body.\n\n**Why:** Delete method; 204 because nothing is returned.",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{apiPrefix}}/cards/{{newCardId}}", "host": ["{{apiPrefix}}"], "path": ["cards", "{{newCardId}}"] }
           },
@@ -509,6 +540,7 @@
           "name": "404 deleted card",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `404`.\n\n**Why:** Proves the delete removed the card.",
             "url": { "raw": "{{apiPrefix}}/cards/{{newCardId}}", "host": ["{{apiPrefix}}"], "path": ["cards", "{{newCardId}}"] }
           },
           "event": [
@@ -522,11 +554,13 @@
     },
     {
       "name": "Extras",
+      "description": "Hierarchical endpoint, composite reads, the review feature, bulk import, 401, and cleanup that leaves the database as seeded.",
       "item": [
         {
           "name": "Hierarchical: all 3 objects",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200` paged cards of topic 1 inside course 1, with links.\n\n**Why:** The required hierarchical method. A topic from a different course answers 404, so the path cannot mix parents.",
             "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}/topics/{{topicId}}/cards", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}", "topics", "{{topicId}}", "cards"] }
           },
           "event": [
@@ -540,6 +574,7 @@
           "name": "Course overview (composite)",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200`: course, its topics and `stateBreakdown` (cards per learning state).\n\n**Why:** Composite read: one call instead of several for a course page.",
             "url": { "raw": "{{apiPrefix}}/courses/{{courseId}}/overview", "host": ["{{apiPrefix}}"], "path": ["courses", "{{courseId}}", "overview"] }
           },
           "event": [
@@ -558,6 +593,7 @@
           "name": "Dashboard (composite)",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200` with `dueToday` and other totals for the caller.\n\n**Why:** Per-user aggregate; needs a token because `/me` is the caller.",
             "header": [{ "key": "Authorization", "value": "Bearer {{authorToken}}" }],
             "url": { "raw": "{{apiPrefix}}/me/dashboard", "host": ["{{apiPrefix}}"], "path": ["me", "dashboard"] }
           },
@@ -577,6 +613,7 @@
           "name": "Review queue",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200`: up to `limit` due cards, each with a link to its review action.\n\n**Why:** Entry point of a study session; the link tells the client where to send the rating.",
             "header": [{ "key": "Authorization", "value": "Bearer {{authorToken}}" }],
             "url": { "raw": "{{apiPrefix}}/review/queue?limit=5", "host": ["{{apiPrefix}}"], "path": ["review", "queue"], "query": [{ "key": "limit", "value": "5" }] }
           },
@@ -591,6 +628,7 @@
           "name": "Review rating (SM-2-lite)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `200` with the updated card, `appliedRating`, `nextDueAt` and `intervalDays`.\n\n**Why:** The domain feature: spaced repetition schedules the next review from the rating (`again`, `hard`, `good`, `easy`). The card row is locked during the update, so simultaneous reviews apply one after another.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{authorToken}}" }
@@ -614,6 +652,7 @@
           "name": "400 invalid rating",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `400`: rating must be again, hard, good or easy.\n\n**Why:** Bad payload on a non-CRUD action.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{authorToken}}" }
@@ -632,6 +671,7 @@
           "name": "Bulk import (201)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `201` `{ imported: 3, cards: [...] }`.\n\n**Why:** Batch create, capped at 200 cards per request.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -650,6 +690,7 @@
           "name": "Import with invalid row (400)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `400` with one error per bad row (`Row 1: …`). Nothing is imported.\n\n**Why:** All or nothing: any invalid row rejects the request, so a half-imported batch never needs repair.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
@@ -668,6 +709,7 @@
           "name": "401 without token",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `401` with header `WWW-Authenticate: Bearer`.\n\n**Why:** Guests may read public data but never write. Compare with the 403 in *Courses*.",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{apiPrefix}}/courses", "host": ["{{apiPrefix}}"], "path": ["courses"] },
             "body": { "mode": "raw", "raw": "{\n  \"code\": \"NOPE\",\n  \"title\": \"Nope\"\n}" }
@@ -683,6 +725,7 @@
           "name": "Cleanup: list imported cards",
           "request": {
             "method": "GET",
+            "description": "**Expected:** `200`; stores the card ids in `cleanupCardIds`.\n\n**Why:** Collects what *Bulk import* created so the topic can be emptied.",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}/cards?pageSize=100", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}", "cards"], "query": [{ "key": "pageSize", "value": "100" }] }
           },
@@ -700,6 +743,7 @@
           "name": "Cleanup: delete topic (204 after emptying)",
           "request": {
             "method": "DELETE",
+            "description": "**Expected:** `204`. Its pre-request script first deletes each listed card.\n\n**Why:** Delete method for Topic, and the success side of the 409 in *Topics*.",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{apiPrefix}}/topics/{{newTopicId}}", "host": ["{{apiPrefix}}"], "path": ["topics", "{{newTopicId}}"] }
           },
@@ -724,6 +768,7 @@
           "name": "Cleanup: delete course (204 after emptying)",
           "request": {
             "method": "DELETE",
+            "description": "**Expected:** `204`.\n\n**Why:** Delete method for Course, and the success side of the 409 in *Courses*. The database is back to its seeded state.",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{apiPrefix}}/courses/{{newCourseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{newCourseId}}"] }
           },
@@ -738,6 +783,7 @@
           "name": "Logout (204)",
           "request": {
             "method": "POST",
+            "description": "**Expected:** `204`: revokes the refresh token's family and clears the cookie.\n\n**Why:** Idempotent: this family was already revoked by the reuse check and logout still succeeds, so a client can always log out.",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
