@@ -1148,6 +1148,13 @@ static async Task<string> IssueRefreshTokenAsync(RecallDbContext db, JwtTokenSer
     return token;
 }
 
+// Liveness + database check for the cloud host and deploy scripts; not part of the REST contract.
+app.MapGet("/health", async (RecallDbContext db) =>
+    await db.Database.CanConnectAsync()
+        ? Results.Ok(new { status = "ok" })
+        : Results.Json(new { status = "database unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable))
+    .ExcludeFromDescription();
+
 if (exportOpenApi)
     await SwaggerExport.WriteAsync(app, args[1]);
 else
