@@ -1077,17 +1077,28 @@ api.MapPost("/auth/refresh", async (RecallDbContext db, JwtTokenService jwt, Htt
 .Produces<AuthResponse>(StatusCodes.Status200OK)
 .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
-api.MapPost("/auth/logout", async (RecallDbContext db, ClaimsPrincipal user, HttpContext http, RefreshRequest? req) =>
+api.MapPost("/auth/logout", async (RecallDbContext db, HttpContext http, RefreshRequest? req) =>
 {
-    if (user.UserId() is null) return ApiHelpers.Unauthorized();
-
+    // Bearer OR refresh-cookie authentication: a browser whose 15-minute
+    // access token has already expired must still be able to log out. The
+    // valid refresh cookie identifies the user just as reliably.
     var presented = req?.RefreshToken ?? http.Request.Cookies["recall_refresh"];
+    int? userId = http.User.UserId();
+    if (userId is null && JwtTokenService.TryHashRefreshToken(presented, out var cookieHash))
+    {
+        userId = await db.RefreshTokens
+            .Where(t => t.TokenHash == cookieHash && t.RevokedAt == null)
+            .Select(t => (int?)t.UserId)
+            .FirstOrDefaultAsync();
+    }
+    if (userId is null) return ApiHelpers.Unauthorized();
+
     if (!JwtTokenService.TryHashRefreshToken(presented, out var tokenHash))
     {
         http.Response.Cookies.Delete("recall_refresh", new CookieOptions { Path = "/api/v1/auth" });
         return Results.NoContent(); // unknown/garbage token: still a successful logout for the client
     }
-    var stored = await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == tokenHash && t.UserId == user.UserId());
+    var stored = await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == tokenHash && t.UserId == userId);
     if (stored is not null)
     {
         // Serialize against refresh/replay for this user, then revoke the
