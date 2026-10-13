@@ -1,0 +1,11 @@
+{
+  "name": "recall-api-tests",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "show-report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0"
+  }
+}
