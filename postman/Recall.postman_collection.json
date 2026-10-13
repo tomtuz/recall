@@ -224,6 +224,7 @@
           "name": "Read one (200)",
           "request": {
             "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{apiPrefix}}/courses/{{newCourseId}}", "host": ["{{apiPrefix}}"], "path": ["courses", "{{newCourseId}}"] }
           },
           "event": [
@@ -688,7 +689,10 @@
           "event": [
             {
               "listen": "test",
-              "script": { "exec": ["pm.test(\"200 card list for cleanup\", () => pm.response.to.have.status(200));"] }
+              "script": { "exec": [
+                "pm.test(\"200 card list for cleanup\", () => pm.response.to.have.status(200));",
+                "pm.collectionVariables.set(\"cleanupCardIds\", JSON.stringify((pm.response.json().data || []).map(c => c.id)));"
+              ] }
             }
           ]
         },
@@ -701,15 +705,18 @@
           },
           "event": [
             {
-              "listen": "test",
+              "listen": "prerequest",
               "script": { "exec": [
-                "// Delete every card in the topic first, then delete the topic itself.",
-                "const res = await pm.sendRequest({ url: pm.variables.replaceIn(\"{{apiPrefix}}/topics/{{newTopicId}}/cards?pageSize=100\"), method: \"GET\", header: { Authorization: `Bearer ${pm.collectionVariables.get(\"accessToken\")}` } });",
-                "const cards = res.json().data || [];",
-                "for (const c of cards) {",
-                "  await pm.sendRequest({ url: pm.variables.replaceIn(`{{apiPrefix}}/cards/${c.id}`), method: \"DELETE\", header: { Authorization: `Bearer ${pm.collectionVariables.get(\"accessToken\")}` } });",
-                "}"
+                "// Delete the cards listed by the previous request first, so the topic delete returns 204.",
+                "const ids = JSON.parse(pm.collectionVariables.get(\"cleanupCardIds\") || \"[]\");",
+                "const auth = { Authorization: `Bearer ${pm.collectionVariables.get(\"accessToken\")}` };",
+                "ids.forEach(id => pm.sendRequest({ url: pm.variables.replaceIn(`{{apiPrefix}}/cards/${id}`), method: \"DELETE\", header: auth },",
+                "  (err, res) => { if (err || res.code !== 204) console.log(`card ${id} delete: ${err || res.code}`); }));"
               ] }
+            },
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test(\"204 topic deleted\", () => pm.response.to.have.status(204));"] }
             }
           ]
         },
