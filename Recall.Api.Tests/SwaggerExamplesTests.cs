@@ -135,4 +135,45 @@ public class SwaggerExamplesTests
             if (Directory.Exists(directory)) Directory.Delete(directory, true);
         }
     }
+
+    [Fact]
+    public async Task Each_operation_documents_the_credential_it_actually_needs()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "recall-openapi-" + Guid.NewGuid());
+        try
+        {
+            var entry = typeof(Program).Assembly.EntryPoint!;
+            var invocation = entry.Invoke(null, [new[] { "--export-openapi", directory }]);
+            if (invocation is Task pendingExport) await pendingExport;
+            using var json = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "api-spec.json")));
+            var root = json.RootElement;
+            Assert.False(root.TryGetProperty("security", out _)); // no global requirement
+
+            // Alternatives per operation, e.g. ["", "Bearer"] = anonymous or bearer.
+            string[] Schemes(string path, string method)
+            {
+                var operation = root.GetProperty("paths").GetProperty(path).GetProperty(method);
+                if (!operation.TryGetProperty("security", out var security)) return [];
+                return security.EnumerateArray()
+                    .Select(r => string.Join("+", r.EnumerateObject().Select(p => p.Name)))
+                    .ToArray();
+            }
+
+            Assert.Empty(Schemes("/api/v1/auth/login", "post"));
+            Assert.Empty(Schemes("/api/v1/auth/register", "post"));
+            Assert.Equal(["RefreshCookie", ""], Schemes("/api/v1/auth/refresh", "post"));
+            Assert.Equal(["Bearer"], Schemes("/api/v1/auth/logout", "post"));
+            Assert.Equal(["Bearer"], Schemes("/api/v1/courses", "post"));
+            Assert.Equal(["Bearer"], Schemes("/api/v1/me/dashboard", "get"));
+            Assert.Equal(["", "Bearer"], Schemes("/api/v1/courses", "get"));
+            Assert.Equal(["", "Bearer"], Schemes("/api/v1/courses/{id}", "get"));
+            var cookie = root.GetProperty("components").GetProperty("securitySchemes").GetProperty("RefreshCookie");
+            Assert.Equal("cookie", cookie.GetProperty("in").GetString());
+            Assert.Equal("recall_refresh", cookie.GetProperty("name").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
+    }
 }

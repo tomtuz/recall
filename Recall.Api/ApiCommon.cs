@@ -158,6 +158,22 @@ public static class Validation
         return null;
     }
 
+    public const int MaxPasswordLength = 128;
+    public const int MaxImportCards = 200;
+    public static readonly string[] CourseSorts = ["title", "-title", "code"];
+
+    /// <summary>Query filter: a defined card state name (case-insensitive); numbers are rejected.</summary>
+    public static string? CheckCardState(string? value, out CardState? state)
+    {
+        state = null;
+        if (value is null) return null;
+        if (value.Length == 0 || char.IsDigit(value[0]) || value[0] is '-' or '+'
+            || !Enum.TryParse<CardState>(value, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
+            return $"State must be one of: {string.Join(", ", Enum.GetNames<CardState>())}.";
+        state = parsed;
+        return null;
+    }
+
     public static bool IsValidEmail(string value)
     {
         // Simple student-level check: exactly one @, non-empty local part and domain with a dot.

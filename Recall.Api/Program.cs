@@ -77,16 +77,15 @@ builder.Services.AddSwaggerGen(c =>
         BearerFormat = "JWT",
         Description = "Access token from /api/v1/auth/login (paste without the 'Bearer ' prefix).",
     });
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    c.AddSecurityDefinition(SwaggerSecurityOperationFilter.RefreshCookie, new OpenApiSecurityScheme
     {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-            },
-            Array.Empty<string>()
-        }
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Cookie,
+        Name = "recall_refresh",
+        Description = "HttpOnly refresh-token cookie set by login/register/refresh (path /api/v1/auth).",
     });
+    // Per-operation requirements: anonymous auth endpoints, required or optional bearer elsewhere.
+    c.OperationFilter<SwaggerSecurityOperationFilter>();
 });
 
 if (exportOpenApi)
@@ -136,6 +135,26 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 app.UseCors("spa");
 app.UseAuthentication();
 app.UseAuthorization();
+
+// RFC 9110: every 401 carries a WWW-Authenticate challenge. Handlers return the
+// JSON error envelope themselves, so the header is added on the way out.
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        if (context.Response.StatusCode == StatusCodes.Status401Unauthorized &&
+            !context.Response.Headers.ContainsKey("WWW-Authenticate"))
+        {
+            var presentedToken = context.Request.Headers.Authorization.ToString()
+                .StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+            context.Response.Headers.WWWAuthenticate = presentedToken && context.User.UserId() is null
+                ? "Bearer error=\"invalid_token\""
+                : "Bearer";
+        }
+        return Task.CompletedTask;
+    });
+    await next();
+});
 
 // Auth-mutation origin gate: CORS restricts response *reading*, it cannot stop
 // a simple cross-site POST from executing. Refresh rotation is a bodyless
@@ -194,6 +213,13 @@ var api = app.MapGroup("/api/v1");
 
 api.MapGet("/courses", async (RecallDbContext db, int? page, int? pageSize, string? search, string? visibility, string? sort, ClaimsPrincipal user) =>
 {
+    // Unknown filter or sort values are client errors, not a silent fallback.
+    visibility = visibility?.ToLowerInvariant();
+    if (visibility is not null and not ("public" or "private"))
+        return ApiHelpers.ValidationError("visibility", "Visibility filter must be 'public' or 'private'.");
+    if (sort is not null && !Validation.CourseSorts.Contains(sort))
+        return ApiHelpers.ValidationError("sort", $"Sort must be one of: {string.Join(", ", Validation.CourseSorts)}.");
+
     var (p, size, offset) = ApiHelpers.ParsePaging(page, pageSize);
     var query = ApiHelpers.ScopeCourses(db, user);
 
@@ -234,7 +260,8 @@ api.MapGet("/courses", async (RecallDbContext db, int? page, int? pageSize, stri
 
     return Results.Ok(new ListResponse<CourseDto>(dtoItems, links, ApiHelpers.BuildMeta(p, size, total)));
 })
-.Produces<ListResponse<CourseDto>>(StatusCodes.Status200OK);
+.Produces<ListResponse<CourseDto>>(StatusCodes.Status200OK)
+.Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
 api.MapPost("/courses", async (RecallDbContext db, PasswordHasher hasher, ClaimsPrincipal user, CourseCreateRequest req) =>
 {
@@ -254,7 +281,7 @@ api.MapPost("/courses", async (RecallDbContext db, PasswordHasher hasher, Claims
     {
         Code = req.Code.Trim(),
         Title = req.Title.Trim(),
-        Description = req.Description ?? "",
+        Description = req.Description?.Trim() ?? "",
         Visibility = req.Visibility == "Public" ? CourseVisibility.Public : CourseVisibility.Private,
         OwnerId = user.UserId()!.Value,
         Owner = null!,
@@ -371,12 +398,15 @@ api.MapPost("/courses/{courseId:int}/topics", async (RecallDbContext db, ClaimsP
     if (req.Position is < 1) return ApiHelpers.ValidationError("Body", "Position must be at least 1.");
 
     var maxPosition = await db.Topics.Where(t => t.CourseId == courseId).MaxAsync(t => (int?)t.Position) ?? 0;
+    // The next automatic position would overflow int: the caller must choose one explicitly.
+    if (req.Position is null && maxPosition == int.MaxValue)
+        return ApiHelpers.Conflict("No automatic topic position is left in this course; set 'position' explicitly.");
 
     var topic = new Topic
     {
         CourseId = courseId,
         Title = req.Title.Trim(),
-        Summary = req.Summary ?? "",
+        Summary = req.Summary?.Trim() ?? "",
         Position = req.Position ?? maxPosition + 1,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow,
@@ -467,11 +497,14 @@ api.MapGet("/topics/{topicId:int}/cards", async (RecallDbContext db, ClaimsPrinc
     if (topic.Course!.Visibility != CourseVisibility.Public && userId != topic.Course.OwnerId && !user.IsAdmin())
         return ApiHelpers.NotFound("Topic", topicId);
 
+    var stateError = Validation.CheckCardState(state, out var parsedState);
+    if (stateError != null) return ApiHelpers.ValidationError("state", stateError);
+
     var (p, size, offset) = ApiHelpers.ParsePaging(page, pageSize);
     var query = db.Cards.Include(c => c.Topic).Where(c => c.TopicId == topicId);
 
-    if (Enum.TryParse<CardState>(state, ignoreCase: true, out var parsedState))
-        query = query.Where(c => c.State == parsedState);
+    if (parsedState is { } stateFilter)
+        query = query.Where(c => c.State == stateFilter);
     if (!string.IsNullOrWhiteSpace(tag))
         query = query.Where(c => c.Tags.ToLower().Contains(tag.ToLower()));
     if (due == true)
@@ -500,6 +533,7 @@ api.MapGet("/topics/{topicId:int}/cards", async (RecallDbContext db, ClaimsPrinc
     return Results.Ok(new ListResponse<CardDto>(items.Select(Mappers.ToDto).ToList(), links, ApiHelpers.BuildMeta(p, size, total)));
 })
 .Produces<ListResponse<CardDto>>(StatusCodes.Status200OK)
+.Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
 .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
 
 api.MapPost("/topics/{topicId:int}/cards", async (RecallDbContext db, ClaimsPrincipal user, int topicId, CardCreateRequest req) =>
@@ -525,7 +559,7 @@ api.MapPost("/topics/{topicId:int}/cards", async (RecallDbContext db, ClaimsPrin
         Answer = req.Answer.Trim(),
         Hint = req.Hint?.Trim(),
         Difficulty = req.Difficulty ?? 3,
-        Tags = req.Tags ?? "",
+        Tags = req.Tags?.Trim() ?? "",
         Topic = topic,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow,
@@ -577,7 +611,7 @@ api.MapPatch("/cards/{id:int}", async (RecallDbContext db, ClaimsPrincipal user,
     if (req.Question is not null) card.Question = req.Question.Trim();
     if (req.Answer is not null) card.Answer = req.Answer.Trim();
     if (req.Hint is not null) card.Hint = req.Hint.Trim() == "" ? null : req.Hint.Trim();
-    if (req.Tags is not null) card.Tags = req.Tags;
+    if (req.Tags is not null) card.Tags = req.Tags.Trim();
     if (req.Difficulty is not null) card.Difficulty = req.Difficulty.Value;
     card.UpdatedAt = DateTime.UtcNow;
 
@@ -758,6 +792,11 @@ api.MapPost("/cards/{id:int}/review", async (RecallDbContext db, ClaimsPrincipal
     var userId = user.UserId();
     if (userId is null) return ApiHelpers.Unauthorized();
 
+    // Lock the card row first, then read it: concurrent reviews of one card run
+    // one after another, each scheduling from the state the previous one saved.
+    await using var reviewTx = await db.Database.BeginTransactionAsync();
+    await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Cards\" WHERE \"Id\" = {id} FOR UPDATE");
+
     var card = await db.Cards.Include(c => c.Topic).ThenInclude(t => t!.Course).ThenInclude(c => c!.Owner).FirstOrDefaultAsync(c => c.Id == id);
     if (card is null) return ApiHelpers.NotFound("Card", id);
     if (card.Topic!.Course!.OwnerId != userId && !user.IsAdmin()) return ApiHelpers.Forbidden();
@@ -779,6 +818,7 @@ api.MapPost("/cards/{id:int}/review", async (RecallDbContext db, ClaimsPrincipal
     card.UpdatedAt = now;
 
     await db.SaveChangesAsync();
+    await reviewTx.CommitAsync();
 
     return Results.Ok(new CardReviewDto(
         card.ToDto(), req.Rating, dueAt, interval));
@@ -803,6 +843,8 @@ api.MapPost("/topics/{id:int}/cards/import", async (RecallDbContext db, ClaimsPr
 
     if (req.Cards is null || req.Cards.Count == 0)
         return ApiHelpers.ValidationError("Cards", "At least one card is required.");
+    if (req.Cards.Count > Validation.MaxImportCards)
+        return ApiHelpers.ValidationError("Cards", $"At most {Validation.MaxImportCards} cards can be imported at once.");
 
     var errors = new List<ErrorDetail>();
     var valid = new List<Card>();
@@ -832,7 +874,7 @@ api.MapPost("/topics/{id:int}/cards/import", async (RecallDbContext db, ClaimsPr
             Answer = row.Answer.Trim(),
             Hint = row.Hint?.Trim(),
             Difficulty = row.Difficulty ?? 3,
-            Tags = row.Tags ?? "",
+            Tags = row.Tags?.Trim() ?? "",
             Topic = topic,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -865,7 +907,9 @@ api.MapPost("/auth/register", async (RecallDbContext db, PasswordHasher hasher, 
         emailError = "Email address format is invalid.";
     var passwordError = string.IsNullOrWhiteSpace(req.Password) || req.Password.Length < 8
         ? "Password must be at least 8 characters."
-        : null;
+        : req.Password.Length > Validation.MaxPasswordLength
+            ? $"Password must be at most {Validation.MaxPasswordLength} characters."
+            : null;
     var nameError = Validation.CheckTitle(req.DisplayName, 100, "DisplayName");
     var firstError = emailError ?? passwordError ?? nameError;
     if (firstError != null) return ApiHelpers.ValidationError("Body", firstError);
@@ -903,6 +947,7 @@ api.MapPost("/auth/register", async (RecallDbContext db, PasswordHasher hasher, 
         new UserDto(user.Id, user.Email, user.DisplayName, user.Role)));
     return response;
 })
+.AllowAnonymous()
 .Produces<AuthResponse>(StatusCodes.Status201Created)
 .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
 .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
@@ -911,6 +956,9 @@ api.MapPost("/auth/login", async (RecallDbContext db, PasswordHasher hasher, Jwt
 {
     var emailError = Validation.CheckTitle(req.Email, 200, "Email");
     if (emailError != null) return ApiHelpers.ValidationError("Body", emailError);
+    // Same cap as registration: no stored password is longer, so skip hashing oversized input.
+    if (req.Password?.Length > Validation.MaxPasswordLength)
+        return ApiHelpers.ValidationError("Body", $"Password must be at most {Validation.MaxPasswordLength} characters.");
 
     var normalizedEmail = req.Email.Trim().ToLowerInvariant();
     var user = await db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail);
@@ -927,6 +975,7 @@ api.MapPost("/auth/login", async (RecallDbContext db, PasswordHasher hasher, Jwt
         http.Request.Headers.ContainsKey("Origin") ? "" : refreshToken,
         new UserDto(user.Id, user.Email, user.DisplayName, user.Role)));
 })
+.AllowAnonymous()
 .Produces<AuthResponse>(StatusCodes.Status200OK)
 .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
 .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
@@ -1024,6 +1073,7 @@ api.MapPost("/auth/refresh", async (RecallDbContext db, JwtTokenService jwt, Htt
         viaCookie ? "" : newToken,
         new UserDto(stored.User.Id, stored.User.Email, stored.User.DisplayName, stored.User.Role)));
 })
+.AllowAnonymous()
 .Produces<AuthResponse>(StatusCodes.Status200OK)
 .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 

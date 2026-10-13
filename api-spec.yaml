@@ -37,6 +37,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CourseDtoListResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - { }
+        - Bearer: [ ]
     post:
       tags:
         - Recall.Api
@@ -99,6 +108,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   '/api/v1/courses/{id}':
     get:
       tags:
@@ -123,6 +134,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - { }
+        - Bearer: [ ]
     patch:
       tags:
         - Recall.Api
@@ -184,6 +198,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
     delete:
       tags:
         - Recall.Api
@@ -221,6 +237,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   '/api/v1/courses/{courseId}/topics':
     get:
       tags:
@@ -255,6 +273,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - { }
+        - Bearer: [ ]
     post:
       tags:
         - Recall.Api
@@ -315,6 +336,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   '/api/v1/topics/{id}':
     get:
       tags:
@@ -339,6 +362,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - { }
+        - Bearer: [ ]
     patch:
       tags:
         - Recall.Api
@@ -393,6 +419,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
     delete:
       tags:
         - Recall.Api
@@ -430,6 +458,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   '/api/v1/topics/{topicId}/cards':
     get:
       tags:
@@ -470,12 +500,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CardDtoListResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Not Found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - { }
+        - Bearer: [ ]
     post:
       tags:
         - Recall.Api
@@ -538,6 +577,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   '/api/v1/cards/{id}':
     get:
       tags:
@@ -562,6 +603,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - { }
+        - Bearer: [ ]
     patch:
       tags:
         - Recall.Api
@@ -624,6 +668,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
     delete:
       tags:
         - Recall.Api
@@ -661,6 +707,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   '/api/v1/courses/{courseId}/topics/{topicId}/cards':
     get:
       tags:
@@ -701,6 +749,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - { }
+        - Bearer: [ ]
   '/api/v1/courses/{id}/overview':
     get:
       tags:
@@ -725,6 +776,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - { }
+        - Bearer: [ ]
   /api/v1/me/dashboard:
     get:
       tags:
@@ -742,6 +796,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   /api/v1/review/queue:
     get:
       tags:
@@ -765,6 +821,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   '/api/v1/cards/{id}/review':
     post:
       tags:
@@ -824,6 +882,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   '/api/v1/topics/{id}/cards/import':
     post:
       tags:
@@ -888,6 +948,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
   /api/v1/auth/register:
     post:
       tags:
@@ -986,6 +1048,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - RefreshCookie: [ ]
+        - { }
   /api/v1/auth/logout:
     post:
       tags:
@@ -1009,6 +1074,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Bearer: [ ]
 components:
   schemas:
     AuthResponse:
@@ -1606,5 +1673,8 @@ components:
       description: Access token from /api/v1/auth/login (paste without the 'Bearer ' prefix).
       scheme: bearer
       bearerFormat: JWT
-security:
-  - Bearer: [ ]
+    RefreshCookie:
+      type: apiKey
+      description: HttpOnly refresh-token cookie set by login/register/refresh (path /api/v1/auth).
+      name: recall_refresh
+      in: cookie
